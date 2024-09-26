@@ -58,13 +58,18 @@ end_token = Token(lbp=0)
 constant_tokens = {
     "+": Token(
         lbp=10,
-        nud=unary_verb_token("+", 20),
+        nud=unary_verb_token("+", 30),
         led=binary_verb_token("+", 10),
     ),
     "-": Token(
         lbp=10,
-        nud=unary_verb_token("-", 20),
+        nud=unary_verb_token("-", 30),
         led=binary_verb_token("-", 10),
+    ),
+    "*": Token(
+        lbp=20,
+        nud=unary_verb_token("*", 30),
+        led=binary_verb_token("*", 20),
     ),
     "(": Token(
         lbp=0,
@@ -116,7 +121,7 @@ class Tokenizer:
         return self.s[self.i].isspace()
 
     def is_token_char(self):
-        return self.s[self.i] in "<>.-+/()[]"
+        return self.s[self.i] in "<>.+-*/()[]"
 
     def consume(self):
         if self.i >= len(self.s):
@@ -172,6 +177,8 @@ unary_verbs = [
     Verb(symbol=">.", name="max", nin=2, nout=1, rank=0),
     Verb(symbol="<.", name="floor", nin=1, nout=1, rank=0),
     Verb(symbol="<.", name="min", nin=2, nout=1, rank=0),
+    Verb(symbol="*", name="sign", nin=1, nout=1, rank=0),
+    Verb(symbol="*", name="times", nin=2, nout=1, rank=0),
 ]
 symbol_to_unary_verb = {VerbSymbol(v.symbol): v for v in unary_verbs if v.nin == 1}
 symbol_to_binary_verb = {VerbSymbol(v.symbol): v for v in unary_verbs if v.nin == 2}
@@ -185,6 +192,8 @@ verb_name_to_ufunc = dict(
     floor=np.floor,
     max=np.maximum,
     min=np.minimum,
+    sign=np.sign,
+    times=np.multiply,
 )
 
 class EvalError(ValueError):
