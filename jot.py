@@ -53,8 +53,9 @@ def binary_verb_token(name, prec):
             return (VerbSymbol(name), left, parser.expr(prec))
     return led
 
+end_token = Token(lbp=0)
+
 constant_tokens = {
-    "end": Token(lbp=0),
     "+": Token(
         lbp=10,
         nud=unary_verb_token("+", 20),
@@ -65,26 +66,36 @@ constant_tokens = {
         nud=unary_verb_token("-", 20),
         led=binary_verb_token("-", 10),
     ),
-    "lparen": Token(
+    "(": Token(
         lbp=0,
         nud=lparen_nud
     ),
-    "rparen": Token(
+    ")": Token(
         name="rparen",
         lbp=0,
     ),
-    "lbracket": Token(
+    "[": Token(
         lbp=0,
         nud=lbracket_nud
     ),
-    "rbracket": Token(
+    "]": Token(
         name="rbracket",
         lbp=0
     ),
-    "slash": Token(
+    "/": Token(
         name="slash",
         lbp=0
-    )
+    ),
+    ">.": Token(
+        lbp=5,
+        nud=unary_verb_token(">.", 20),
+        led=binary_verb_token(">.", 5)
+    ),
+    "<.": Token(
+        lbp=5,
+        nud=unary_verb_token("<.", 20),
+        led=binary_verb_token("<.", 5)
+    ),
 }
 
 def literal_token(val):
@@ -92,16 +103,6 @@ def literal_token(val):
         lbp=0,                  # ?
         nud=lambda expr: val,
     )
-
-token_name_lookup = {
-    "+": "+",
-    "-": "-",
-    "(": "lparen",
-    ")": "rparen",
-    "[": "lbracket",
-    "]": "rbracket",
-    "/": "slash"
-}
 
 class Tokenizer:
     def __init__(self, s):
@@ -114,9 +115,12 @@ class Tokenizer:
     def is_space(self):
         return self.s[self.i].isspace()
 
+    def is_token_char(self):
+        return self.s[self.i] in "<>.-+/()[]"
+
     def consume(self):
         if self.i >= len(self.s):
-            return constant_tokens["end"]
+            return end_token
 
         while self.is_space(): self.i += 1
 
@@ -125,10 +129,13 @@ class Tokenizer:
             while self.is_num_char(): self.i += 1
             return literal_token(float(self.s[start_i:self.i]))
         else:
-            if self.s[self.i] in token_name_lookup:
-                start_i = self.i
+            start_i = self.i
+            while self.is_token_char():
                 self.i += 1
-                return constant_tokens[token_name_lookup[self.s[start_i:self.i]]]
+                name = self.s[start_i:self.i]
+                if name in constant_tokens:
+                    return constant_tokens[name]
+            assert 0
 
 class Parser:
     def __init__(self, s):
@@ -160,7 +167,11 @@ unary_verbs = [
     Verb(symbol="+", name="plus", nin=2, nout=1, rank=0),
     Verb(symbol="+", name="conjugate", nin=1, nout=1, rank=0),
     Verb(symbol="-", name="minus", nin=2, nout=1, rank=0),
-    Verb(symbol="-", name="negate", nin=1, nout=1, rank=0)
+    Verb(symbol="-", name="negate", nin=1, nout=1, rank=0),
+    Verb(symbol=">.", name="ceiling", nin=1, nout=1, rank=0),
+    Verb(symbol=">.", name="max", nin=2, nout=1, rank=0),
+    Verb(symbol="<.", name="floor", nin=1, nout=1, rank=0),
+    Verb(symbol="<.", name="min", nin=2, nout=1, rank=0),
 ]
 symbol_to_unary_verb = {VerbSymbol(v.symbol): v for v in unary_verbs if v.nin == 1}
 symbol_to_binary_verb = {VerbSymbol(v.symbol): v for v in unary_verbs if v.nin == 2}
@@ -169,7 +180,11 @@ verb_name_to_ufunc = dict(
     plus=np.add,
     conjugate=np.conjugate,
     minus=np.subtract,
-    negate=np.negative
+    negate=np.negative,
+    ceiling=np.ceil,
+    floor=np.floor,
+    max=np.maximum,
+    min=np.minimum,
 )
 
 class EvalError(ValueError):
