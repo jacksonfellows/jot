@@ -115,6 +115,9 @@ class Parser:
             left = t.led(self, left)
         return left
 
+def parse_expr(s):
+    return Parser(s).parse_expr()
+
 # --------------------------------------------------------------------------------
 # Crude evaluation.
 
@@ -148,3 +151,14 @@ def eval_expr(expr):
 
     verb = name_to_verb[expr[0]]
     return eval_verb(verb, [eval_expr(e) for e in expr[1:]])
+
+def repl():
+    while 1:
+        try:
+            inp = input("> ")
+            try:
+                print(eval_expr(parse_expr(inp)))
+            except e:
+                print("Error: ", e)
+        except EOFError:
+            break
