@@ -33,7 +33,7 @@ def lbracket_nud(parser):
 def parse_adverb(parser):
     if parser.token.name == "slash":
         parser.token = parser.next()
-        return AdverbSymbol("insert")
+        return AdverbSymbol("slash")
 
 def unary_verb_token(name, prec):
     def nud(parser):
@@ -185,12 +185,20 @@ def eval_verb(symbol: VerbSymbol, nouns):
     return verb_name_to_ufunc[verb.name](*nouns)
 
 def eval_adverb(adverb_symbol: AdverbSymbol, verb_symbol: VerbSymbol, nouns):
-    if adverb_symbol.symbol == "insert":
-        assert len(nouns) == 1
-        rank = -1
-        verb = symbol_to_binary_verb[verb_symbol]
-        ufunc = verb_name_to_ufunc[verb.name]
-        return ufunc.reduce(nouns[0], axis=rank)
+    if adverb_symbol.symbol == "slash":
+        if len(nouns) == 1:
+            # insert
+            rank = -1
+            verb = symbol_to_binary_verb[verb_symbol]
+            ufunc = verb_name_to_ufunc[verb.name]
+            return ufunc.reduce(nouns[0], axis=rank)
+        elif len(nouns) == 2:
+            # table
+            verb = symbol_to_binary_verb[verb_symbol]
+            ufunc = verb_name_to_ufunc[verb.name]
+            return ufunc.outer(nouns[0], nouns[1])
+        else:
+            assert 0
     else:
         raise EvalError(f"Unrecognized adverb `{adverb_symbol.symbol}`.")
 
