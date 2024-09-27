@@ -53,7 +53,7 @@ def binary_verb_token(name, prec):
             return (VerbSymbol(name), left, parser.expr(prec))
     return led
 
-end_token = Token(lbp=0)
+end_token = Token(lbp=0, name="end")
 
 constant_tokens = {
     "+": Token(
@@ -161,7 +161,11 @@ class Parser:
         return left
 
 def parse_expr(s):
-    return Parser(s).parse_expr()
+    p = Parser(s)
+    expr = p.parse_expr()
+    if p.token.name != "end":
+        raise ParseError("Could not parse to end of input.")
+    return expr
 
 # --------------------------------------------------------------------------------
 # Crude evaluation.
@@ -243,7 +247,7 @@ def repl():
             inp = input("> ")
             try:
                 print(eval_expr(parse_expr(inp)))
-            except e:
-                print("Error: ", e)
+            except Exception as e:
+                print("Error:", e)
         except EOFError:
             break
