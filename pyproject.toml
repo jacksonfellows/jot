@@ -13,6 +13,7 @@ isort = "^5.13.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.3"
+mypy = "^1.11.2"
 
 [build-system]
 requires = ["poetry-core"]
