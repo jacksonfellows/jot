@@ -1,4 +1,5 @@
 from collections import namedtuple
+from math import prod
 
 import numpy as np
 
@@ -101,7 +102,12 @@ constant_tokens = {
         nud=unary_verb_token("<.", 20),
         led=binary_verb_token("<.", 5)
     ),
+    "i.": Token(
+        nud=unary_verb_token("i.", 20),
+    )
 }
+
+token_chars = set("".join(constant_tokens.keys()))
 
 def literal_token(val):
     return Token(
@@ -121,7 +127,7 @@ class Tokenizer:
         return self.s[self.i].isspace()
 
     def is_token_char(self):
-        return self.s[self.i] in "<>.+-*/()[]"
+        return self.s[self.i] in token_chars
 
     def consume(self):
         if self.i >= len(self.s):
@@ -132,7 +138,7 @@ class Tokenizer:
         if self.is_num_char():
             start_i = self.i
             while self.is_num_char(): self.i += 1
-            return literal_token(float(self.s[start_i:self.i]))
+            return literal_token(np.array(float(self.s[start_i:self.i])))
         else:
             start_i = self.i
             while self.is_token_char():
@@ -170,9 +176,12 @@ def parse_expr(s):
 # --------------------------------------------------------------------------------
 # Crude evaluation.
 
+class EvalError(ValueError):
+    pass
+
 Verb = namedtuple("Verb", ["symbol", "name", "nin", "nout", "rank"])
 
-unary_verbs = [
+verbs = [
     Verb(symbol="+", name="plus", nin=2, nout=1, rank=0),
     Verb(symbol="+", name="conjugate", nin=1, nout=1, rank=0),
     Verb(symbol="-", name="minus", nin=2, nout=1, rank=0),
@@ -183,9 +192,10 @@ unary_verbs = [
     Verb(symbol="<.", name="min", nin=2, nout=1, rank=0),
     Verb(symbol="*", name="sign", nin=1, nout=1, rank=0),
     Verb(symbol="*", name="times", nin=2, nout=1, rank=0),
+    Verb(symbol="i.", name="integers", nin=1, nout=1, rank=1)
 ]
-symbol_to_unary_verb = {VerbSymbol(v.symbol): v for v in unary_verbs if v.nin == 1}
-symbol_to_binary_verb = {VerbSymbol(v.symbol): v for v in unary_verbs if v.nin == 2}
+symbol_to_unary_verb = {VerbSymbol(v.symbol): v for v in verbs if v.nin == 1}
+symbol_to_binary_verb = {VerbSymbol(v.symbol): v for v in verbs if v.nin == 2}
 
 verb_name_to_ufunc = dict(
     plus=np.add,
@@ -200,8 +210,26 @@ verb_name_to_ufunc = dict(
     times=np.multiply,
 )
 
-class EvalError(ValueError):
-    pass
+def integers_func(shape):
+    # TODO handle negative shapes like in J?
+    ishape = tuple(int(s) for s in shape)
+    if ishape != tuple(shape):
+        raise EvalError(f"Invalid shape for integers: {shape}")
+    count = prod(ishape)
+    return np.arange(count).reshape(ishape)
+
+verb_name_to_func = dict(
+    integers=integers_func
+)
+
+def apply_ranked_verb(verb: Verb, nouns):
+    assert len(nouns) == 1      # Support binary verbs later.
+    noun = nouns[0]
+    if verb.rank == 1 and len(noun.shape) < 1:
+        noun = noun.reshape(1)
+    if verb.rank == len(noun.shape):
+        return verb_name_to_func[verb.name](noun)
+    raise EvalError("Not yet supported!")
 
 def eval_verb(symbol: VerbSymbol, nouns):
     if len(nouns) == 1:
@@ -210,7 +238,11 @@ def eval_verb(symbol: VerbSymbol, nouns):
         verb = symbol_to_binary_verb[symbol]
     else:
         assert 0
-    return verb_name_to_ufunc[verb.name](*nouns)
+    if verb.rank == 0:
+        # Can apply rank-0 verbs as numpy ufuncs.
+        return verb_name_to_ufunc[verb.name](*nouns)
+    else:
+        return apply_ranked_verb(verb, nouns)
 
 def eval_adverb(adverb_symbol: AdverbSymbol, verb_symbol: VerbSymbol, nouns):
     if adverb_symbol.symbol == "slash":
@@ -231,7 +263,7 @@ def eval_adverb(adverb_symbol: AdverbSymbol, verb_symbol: VerbSymbol, nouns):
         raise EvalError(f"Unrecognized adverb `{adverb_symbol.symbol}`.")
 
 def eval_expr(expr):
-    if type(expr) == np.ndarray or type(expr) == float:
+    if type(expr) == np.ndarray:
         return expr
     if expr[0] == "array":
         return np.array([eval_expr(e) for e in expr[1]])
