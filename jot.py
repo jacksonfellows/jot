@@ -31,27 +31,21 @@ def lbracket_nud(parser):
 
 # Hacky system to modify verbs.
 
-def parse_adverb(parser):
-    if parser.token.name == "slash":
-        parser.token = parser.next()
-        return AdverbSymbol("slash")
+adverb_symbols = ["slash", "doublequote"]
+
+def parse_adverbs(parser, verb):
+    if parser.token.name in adverb_symbols:
+        verb = (parser.expr(40), verb) # ?
+    return verb
 
 def unary_verb_token(name, prec):
     def nud(parser):
-        adverb = parse_adverb(parser)
-        if adverb:
-            return (adverb, VerbSymbol(name), parser.expr(prec))
-        else:
-            return (VerbSymbol(name), parser.expr(prec))
+        return (parse_adverbs(parser, VerbSymbol(name)), parser.expr(prec))
     return nud
 
 def binary_verb_token(name, prec):
     def led(parser, left):
-        adverb = parse_adverb(parser)
-        if adverb:
-            return (adverb, VerbSymbol(name), left, parser.expr(prec))
-        else:
-            return (VerbSymbol(name), left, parser.expr(prec))
+        return (parse_adverbs(parser, VerbSymbol(name)), left, parser.expr(prec))
     return led
 
 end_token = Token(lbp=0, name="end")
@@ -90,7 +84,12 @@ constant_tokens = {
     ),
     "/": Token(
         name="slash",
-        lbp=0
+        lbp=0,
+        nud=lambda parser: AdverbSymbol("slash")
+    ),
+    "\"": Token(
+        name="doublequote",
+        lbp=0,
     ),
     ">.": Token(
         lbp=5,
@@ -112,7 +111,7 @@ token_chars = set("".join(constant_tokens.keys()))
 def literal_token(val):
     return Token(
         lbp=0,                  # ?
-        nud=lambda expr: val,
+        nud=lambda parser: val,
     )
 
 class Tokenizer:
@@ -179,36 +178,7 @@ def parse_expr(s):
 class EvalError(ValueError):
     pass
 
-Verb = namedtuple("Verb", ["symbol", "name", "nin", "nout", "rank"])
-
-verbs = [
-    Verb(symbol="+", name="plus", nin=2, nout=1, rank=0),
-    Verb(symbol="+", name="conjugate", nin=1, nout=1, rank=0),
-    Verb(symbol="-", name="minus", nin=2, nout=1, rank=0),
-    Verb(symbol="-", name="negate", nin=1, nout=1, rank=0),
-    Verb(symbol=">.", name="ceiling", nin=1, nout=1, rank=0),
-    Verb(symbol=">.", name="max", nin=2, nout=1, rank=0),
-    Verb(symbol="<.", name="floor", nin=1, nout=1, rank=0),
-    Verb(symbol="<.", name="min", nin=2, nout=1, rank=0),
-    Verb(symbol="*", name="sign", nin=1, nout=1, rank=0),
-    Verb(symbol="*", name="times", nin=2, nout=1, rank=0),
-    Verb(symbol="i.", name="integers", nin=1, nout=1, rank=1)
-]
-symbol_to_unary_verb = {VerbSymbol(v.symbol): v for v in verbs if v.nin == 1}
-symbol_to_binary_verb = {VerbSymbol(v.symbol): v for v in verbs if v.nin == 2}
-
-verb_name_to_ufunc = dict(
-    plus=np.add,
-    conjugate=np.conjugate,
-    minus=np.subtract,
-    negate=np.negative,
-    ceiling=np.ceil,
-    floor=np.floor,
-    max=np.maximum,
-    min=np.minimum,
-    sign=np.sign,
-    times=np.multiply,
-)
+Verb = namedtuple("Verb", ["symbol", "name", "unary_rank", "binary_rank", "unary_ufunc", "binary_ufunc", "unary_func", "binary_func"], defaults=[None]*8)
 
 def integers_func(shape):
     # TODO handle negative shapes like in J?
@@ -218,60 +188,71 @@ def integers_func(shape):
     count = prod(ishape)
     return np.arange(count).reshape(ishape)
 
-verb_name_to_func = dict(
-    integers=integers_func
-)
+verbs = [
+    Verb(symbol="+", unary_rank=0, unary_ufunc=np.conjugate, binary_rank=0, binary_ufunc=np.add),
+    Verb(symbol="-", unary_rank=0, unary_ufunc=np.negative, binary_rank=0, binary_ufunc=np.subtract),
+    Verb(symbol=">.", unary_rank=0, unary_ufunc=np.ceil, binary_rank=0, binary_ufunc=np.maximum),
+    Verb(symbol="<.", unary_rank=0, unary_ufunc=np.floor, binary_rank=0, binary_ufunc=np.minimum),
+    Verb(symbol="*", unary_rank=0, unary_ufunc=np.sign, binary_rank=0, binary_ufunc=np.multiply),
+    Verb(symbol="i.", unary_rank=1, unary_func=integers_func)
+]
+symbol_to_verb = {VerbSymbol(v.symbol): v for v in verbs}
 
-def apply_ranked_verb(verb: Verb, nouns):
-    assert len(nouns) == 1      # Support binary verbs later.
-    noun = nouns[0]
-    if verb.rank == 1 and len(noun.shape) < 1:
+def apply_ranked_verb_unary(verb: Verb, noun):
+    rank = verb.unary_rank
+    if rank < 0: rank = len(noun.shape) + 1 + rank
+    if rank == 1 and len(noun.shape) < 1:
         noun = noun.reshape(1)
-    if verb.rank == len(noun.shape):
-        return verb_name_to_func[verb.name](noun)
+    if rank == len(noun.shape):
+        return verb.unary_func(noun)
     raise EvalError("Not yet supported!")
 
-def eval_verb(symbol: VerbSymbol, nouns):
+def apply_ranked_verb_binary(verb: Verb, noun1, noun2):
+    rank = verb.binary_rank
+    if rank == float("inf"):
+        return verb.binary_func(noun1, noun2)
+    raise EvalError("Not yet supported!")
+
+def apply_ranked_verb(verb: Verb, nouns):
     if len(nouns) == 1:
-        verb = symbol_to_unary_verb[symbol]
-    elif len(nouns) == 2:
-        verb = symbol_to_binary_verb[symbol]
-    else:
-        assert 0
-    if verb.rank == 0:
-        # Can apply rank-0 verbs as numpy ufuncs.
-        return verb_name_to_ufunc[verb.name](*nouns)
+        return apply_ranked_verb_unary(verb, nouns[0])
+    return apply_ranked_verb_binary(verb, nouns[0], nouns[1])
+
+def eval_verb(verb: Verb, nouns):
+    if len(nouns) == 1 and verb.unary_rank == 0 and verb.unary_ufunc is not None:
+        return verb.unary_ufunc(*nouns)
+    if len(nouns) == 2 and verb.binary_rank == 0 and verb.binary_ufunc is not None:
+        return verb.binary_ufunc(*nouns)
     else:
         return apply_ranked_verb(verb, nouns)
 
-def eval_adverb(adverb_symbol: AdverbSymbol, verb_symbol: VerbSymbol, nouns):
+def eval_adverb(adverb_symbol: AdverbSymbol, verb_symbol: VerbSymbol):
     if adverb_symbol.symbol == "slash":
-        if len(nouns) == 1:
-            # insert
-            rank = -1
-            verb = symbol_to_binary_verb[verb_symbol]
-            ufunc = verb_name_to_ufunc[verb.name]
-            return ufunc.reduce(nouns[0], axis=rank)
-        elif len(nouns) == 2:
-            # table
-            verb = symbol_to_binary_verb[verb_symbol]
-            ufunc = verb_name_to_ufunc[verb.name]
-            return ufunc.outer(nouns[0], nouns[1])
-        else:
-            assert 0
+        verb = symbol_to_verb[verb_symbol]
+        ufunc = verb.binary_ufunc
+        return Verb(
+            unary_rank=-1,
+            unary_func=lambda x: ufunc.reduce(x, axis=-1),
+            binary_rank=float("inf"),
+            binary_func=lambda x, y: ufunc.outer(x, y)
+        )
     else:
         raise EvalError(f"Unrecognized adverb `{adverb_symbol.symbol}`.")
 
 def eval_expr(expr):
+    print(expr)
     if type(expr) == np.ndarray:
         return expr
+    if type(expr[0]) == tuple:
+        return eval_expr((eval_expr(expr[0]), *expr[1:]))
     if expr[0] == "array":
         return np.array([eval_expr(e) for e in expr[1]])
     if type(expr[0]) == VerbSymbol:
-        return eval_verb(expr[0], [eval_expr(e) for e in expr[1:]])
+        return eval_expr((symbol_to_verb[expr[0]], *expr[1:]))
+    if type(expr[0]) == Verb:
+        return eval_verb(expr[0], [eval_expr(x) for x in expr[1:]])
     if type(expr[0]) == AdverbSymbol:
-        # Do I need to eval verb slot?
-        return eval_adverb(expr[0], expr[1], [eval_expr(e) for e in expr[2:]])
+        return eval_adverb(expr[0], expr[1])
 
 def repl():
     while 1:
