@@ -206,7 +206,7 @@ class Verb(Operator):
             x = args[0]
             if self.urank == float("inf"):
                 return self.ufunc(x)
-            while len(x.shape) < self.urank: x = x.reshape((1, -1))
+            while len(x.shape) < self.urank: x = x.reshape((1, *x.shape))
             if len(x.shape) > self.urank:
                 if self.urank == 0 and type(self.ufunc) == np.ufunc:
                     pass
@@ -216,9 +216,9 @@ class Verb(Operator):
         if len(args) == 2:
             x, y = args
             if self.brank1 != float("inf"):
-                while len(x.shape) < self.brank1: x = x.reshape((1, -1))
+                while len(x.shape) < self.brank1: x = x.reshape((1, *x.shape))
             if self.brank2 != float("inf"):
-                while len(y.shape) < self.brank2: y = y.reshape((1, -1))
+                while len(y.shape) < self.brank2: y = y.reshape((1, *y.shape))
             if len(x.shape) > self.brank1 or len(y.shape) > self.brank2:
                 if self.brank1 == 0 and self.brank2 == 0 and type(self.bfunc) == np.ufunc:
                     pass
@@ -254,7 +254,7 @@ class RankedVerb(Operator):
             x = args[0]
             if len(x.shape) <= self.rank:
                 return self.verb.eval([x])
-            shape = x.shape[int(self.rank):]
+            shape = x.shape[:int(self.rank)]
             res = []
             for i in np.ndindex(shape):
                 res.append(self.verb.eval([x[i]]))
