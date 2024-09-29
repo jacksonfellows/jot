@@ -105,6 +105,7 @@ constant_tokens = {
         led=binary_verb_token("<.", 5)
     ),
     "i.": Token(
+        lbp=0,                  # ?
         nud=unary_verb_token("i.", 20),
     )
 }
@@ -206,7 +207,7 @@ class Verb(Operator):
             x = args[0]
             if self.urank == float("inf"):
                 return self.ufunc(x)
-            while len(x.shape) < self.urank: x = x.reshape((1, *x.shape))
+            while len(x.shape) < self.urank: x = x.reshape((*x.shape, 1))
             if len(x.shape) > self.urank:
                 if self.urank == 0 and type(self.ufunc) == np.ufunc:
                     pass
@@ -215,16 +216,14 @@ class Verb(Operator):
             return self.ufunc(x)
         if len(args) == 2:
             x, y = args
-            if self.brank1 != float("inf"):
-                while len(x.shape) < self.brank1: x = x.reshape((1, *x.shape))
-            if self.brank2 != float("inf"):
-                while len(y.shape) < self.brank2: y = y.reshape((1, *y.shape))
-            if len(x.shape) > self.brank1 or len(y.shape) > self.brank2:
-                if self.brank1 == 0 and self.brank2 == 0 and type(self.bfunc) == np.ufunc:
-                    pass
-                else:
-                    raise TODO_ERROR
-            return self.bfunc(x, y)
+            if self.brank1 == float("inf") and self.brank2 == float("inf"):
+                return self.bfunc(x, y)
+            if type(self.bfunc) == np.ufunc and self.brank1 == self.brank2:
+                S = max(len(x.shape), len(y.shape), self.brank1)
+                while len(x.shape) < S: x = x.reshape((*x.shape, 1))
+                while len(y.shape) < S: y = y.reshape((*y.shape, 1))
+                return self.bfunc(x, y)
+            raise TODO_ERROR
         raise EvalError("Too many nouns for verb {self.symbol}.")
 
 class SlashAdverb(Operator):
@@ -259,8 +258,11 @@ class RankedVerb(Operator):
             for i in np.ndindex(shape):
                 res.append(self.verb.eval([x[i]]))
             return np.stack(res)
-        else:
+        elif len(args) == 2:
             raise TODO_ERROR
+        else:
+            raise EvalError("Too many nouns.")
+
 
 @dataclass
 class Rank(Operator):
