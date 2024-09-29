@@ -10,9 +10,6 @@ import numpy as np
 # Bastardized Pratt parser.
 
 VerbSymbol = namedtuple("VerbSymbol", ["symbol"])
-AdverbSymbol = namedtuple("AdverbSymbol", ["symbol"])
-
-Rank = namedtuple("Rank", ["rank"])
 
 class ParseError(ValueError):
     pass
@@ -184,9 +181,10 @@ def parse_expr(s):
 class EvalError(ValueError):
     pass
 
+TODO_ERROR = EvalError("Not yet implemented!")
+
 class Operator:
     pass
-
 
 class ArrayLiteral(Operator):
     def eval(self, args):
@@ -194,26 +192,26 @@ class ArrayLiteral(Operator):
 
 ARRAY_LITERAL_OPERATOR = ArrayLiteral()
 
-
 @dataclass
 class Verb(Operator):
     symbol: str
-    urank: int
-    brank1: int
-    brank2: int
+    urank: Any
+    brank1: Any
+    brank2: Any
     ufunc: Any
     bfunc: Any
 
     def eval(self, args):
         if len(args) == 1:
             x = args[0]
-            if self.urank != float("inf"):
-                while len(x.shape) < self.urank: x = x.reshape((1, -1))
+            if self.urank == float("inf"):
+                return self.ufunc(x)
+            while len(x.shape) < self.urank: x = x.reshape((1, -1))
             if len(x.shape) > self.urank:
                 if self.urank == 0 and type(self.ufunc) == np.ufunc:
                     pass
                 else:
-                    raise EvalError("Not supported!")
+                    raise TODO_ERROR
             return self.ufunc(x)
         if len(args) == 2:
             x, y = args
@@ -225,10 +223,9 @@ class Verb(Operator):
                 if self.brank1 == 0 and self.brank2 == 0 and type(self.bfunc) == np.ufunc:
                     pass
                 else:
-                    raise EvalError("Not supported!")
+                    raise TODO_ERROR
             return self.bfunc(x, y)
         raise EvalError("Too many nouns for verb {self.symbol}.")
-
 
 class SlashAdverb(Operator):
     def eval(self, args):
@@ -239,15 +236,40 @@ class SlashAdverb(Operator):
         return Verb(
             symbol=None,
             urank=float("inf"),
-            ufunc=lambda x: func.reduce(x, axis=-1),
+            ufunc=lambda x: func.reduce(x, axis=0),
             brank1=float("inf"),
             brank2=float("inf"),
             bfunc=lambda x, y: func.outer(x, y)
         )
 
-
 SLASH_ADVERB_OPERATOR = SlashAdverb()
 
+@dataclass
+class RankedVerb(Operator):
+    verb: Verb
+    rank: Any
+
+    def eval(self, args):
+        if len(args) == 1:
+            x = args[0]
+            if len(x.shape) <= self.rank:
+                return self.verb.eval([x])
+            shape = x.shape[int(self.rank):]
+            res = []
+            for i in np.ndindex(shape):
+                res.append(self.verb.eval([x[i]]))
+            return np.stack(res)
+        else:
+            raise TODO_ERROR
+
+@dataclass
+class Rank(Operator):
+    rank: Any                   # TODO support different binary ranks
+
+    def eval(self, args):
+        assert len(args) == 1
+        verb: Verb = args[0]
+        return RankedVerb(verb=verb, rank=self.rank)
 
 def integers_func(shape):
     # TODO handle negative shapes like in J?
