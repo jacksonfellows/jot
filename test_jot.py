@@ -24,4 +24,5 @@ test_cases = [
 
 def test_basic():
     for s, a in test_cases:
+        print(f"{s} => {a}")
         assert np.all(eval_expr(parse_expr(s)) == a)
