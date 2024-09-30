@@ -116,6 +116,12 @@ constant_tokens = {
     "?": Token(
         lbp=0,                  # ?
         nud=unary_verb_token("?", 20)
+    ),
+    "$": Token(
+        lbp=15,
+        nud=unary_verb_token("$", 20),
+        led=binary_verb_token("$", 15)
+
     )
 }
 
@@ -200,6 +206,9 @@ class ArrayLiteral(Operator):
     def eval(self, args):
         return np.array(args)
 
+    def __repr__(self):
+        return "ArrayLiteral()"
+
 ARRAY_LITERAL_OPERATOR = ArrayLiteral()
 
 @dataclass
@@ -225,7 +234,7 @@ class Verb(Operator):
             return self.ufunc(x)
         if len(args) == 2:
             x, y = args
-            if self.brank1 == float("inf") and self.brank2 == float("inf"):
+            if (self.brank1 == float("inf") or self.brank1 == len(x.shape)) and (self.brank2 == float("inf") or self.brank2 == len(y.shape)):
                 return self.bfunc(x, y)
             if type(self.bfunc) == np.ufunc and self.brank1 == self.brank2:
                 S = max(len(x.shape), len(y.shape), self.brank1)
@@ -307,6 +316,11 @@ def integers_func(shape):
 
 roll_func = np.frompyfunc(lambda x: np.random.random() if x == 0 else np.random.randint(x), nin=1, nout=1)
 
+def shape_bfunc(x, y):
+    shape = tuple(int(x_) for x_ in x)
+    while len(y.shape) < len(shape): y = y.reshape((*y.shape, 1))
+    return np.broadcast_to(y, shape)
+
 verbs = [
     Verb(symbol="+", urank=0, ufunc=np.conjugate, brank1=0, brank2=0, bfunc=np.add),
     Verb(symbol="-", urank=0, ufunc=np.negative, brank1=0, brank2=0, bfunc=np.subtract),
@@ -314,7 +328,8 @@ verbs = [
     Verb(symbol="<.", urank=0, ufunc=np.floor, brank1=0, brank2=0, bfunc=np.minimum),
     Verb(symbol="*", urank=0, ufunc=np.sign, brank1=0, brank2=0, bfunc=np.multiply),
     Verb(symbol="i.", urank=1, ufunc=integers_func, brank1=None, brank2=None, bfunc=None),
-    Verb(symbol="?", urank=0, ufunc=roll_func, brank1=None, brank2=None, bfunc=None)
+    Verb(symbol="?", urank=0, ufunc=roll_func, brank1=None, brank2=None, bfunc=None),
+    Verb(symbol="$", urank=float("inf"), ufunc=lambda x: np.array(x.shape), brank1=1, brank2=float("inf"), bfunc=shape_bfunc),
 ]
 symbol_to_verb = {VerbSymbol(v.symbol): v for v in verbs}
 
