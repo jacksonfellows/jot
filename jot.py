@@ -33,7 +33,7 @@ def lbracket_nud(parser):
 
 # Hacky system to modify verbs.
 
-adverb_symbols = ["/", "\""]
+adverb_symbols = ["/", "\"", "~"]
 
 def parse_adverbs(parser, verb):
     while parser.token.name in adverb_symbols:
@@ -88,6 +88,11 @@ constant_tokens = {
         name="/",
         lbp=0,
         nud=lambda parser: SLASH_ADVERB_OPERATOR
+    ),
+    "~": Token(
+        name="~",
+        lbp=0,
+        nud=lambda parser: TILDE_ADVERB_OPERATOR
     ),
     "\"": Token(
         name="\"",
@@ -246,6 +251,21 @@ class SlashAdverb(Operator):
         )
 
 SLASH_ADVERB_OPERATOR = SlashAdverb()
+
+class TildeAdverb(Operator):
+    def eval(self, args):
+        assert len(args) == 1
+        verb: Verb = args[0]
+        return Verb(
+            symbol=None,
+            urank=float("inf"),
+            ufunc=lambda x: verb.eval([x, x]),
+            brank1=None,
+            brank2=None,
+            bfunc=None
+        )
+
+TILDE_ADVERB_OPERATOR = TildeAdverb()
 
 @dataclass
 class RankedVerb(Operator):
