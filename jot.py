@@ -107,6 +107,10 @@ constant_tokens = {
     "i.": Token(
         lbp=0,                  # ?
         nud=unary_verb_token("i.", 20),
+    ),
+    "?": Token(
+        lbp=0,                  # ?
+        nud=unary_verb_token("?", 20)
     )
 }
 
@@ -281,13 +285,16 @@ def integers_func(shape):
     count = prod(ishape)
     return np.arange(count).reshape(ishape)
 
+roll_func = np.frompyfunc(lambda x: np.random.random() if x == 0 else np.random.randint(x), nin=1, nout=1)
+
 verbs = [
     Verb(symbol="+", urank=0, ufunc=np.conjugate, brank1=0, brank2=0, bfunc=np.add),
     Verb(symbol="-", urank=0, ufunc=np.negative, brank1=0, brank2=0, bfunc=np.subtract),
     Verb(symbol=">.", urank=0, ufunc=np.ceil, brank1=0, brank2=0, bfunc=np.maximum),
     Verb(symbol="<.", urank=0, ufunc=np.floor, brank1=0, brank2=0, bfunc=np.minimum),
     Verb(symbol="*", urank=0, ufunc=np.sign, brank1=0, brank2=0, bfunc=np.multiply),
-    Verb(symbol="i.", urank=1, ufunc=integers_func, brank1=None, brank2=None, bfunc=None)
+    Verb(symbol="i.", urank=1, ufunc=integers_func, brank1=None, brank2=None, bfunc=None),
+    Verb(symbol="?", urank=0, ufunc=roll_func, brank1=None, brank2=None, bfunc=None)
 ]
 symbol_to_verb = {VerbSymbol(v.symbol): v for v in verbs}
 
