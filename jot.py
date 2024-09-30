@@ -126,6 +126,10 @@ constant_tokens = {
         lbp=5,
         nud=unary_verb_token("=", 20),
         led=binary_verb_token("=", 5)
+    ),
+    "'": Token(
+        lbp=30,
+        led=lambda parser, left: (parse_adverbs(parser, VerbSymbol("'")), left)
     )
 }
 
@@ -334,7 +338,8 @@ verbs = [
     Verb(symbol="i.", urank=1, ufunc=integers_func, brank1=None, brank2=None, bfunc=None),
     Verb(symbol="?", urank=0, ufunc=roll_func, brank1=None, brank2=None, bfunc=None),
     Verb(symbol="$", urank=float("inf"), ufunc=lambda x: np.array(x.shape), brank1=1, brank2=float("inf"), bfunc=shape_bfunc),
-    Verb(symbol="=", urank=None, ufunc=None, brank1=0, brank2=0, bfunc=np.equal)
+    Verb(symbol="=", urank=None, ufunc=None, brank1=0, brank2=0, bfunc=np.equal),
+    Verb(symbol="'", urank=float("inf"), ufunc=np.transpose, brank1=None, brank2=None, bfunc=None)
 ]
 symbol_to_verb = {VerbSymbol(v.symbol): v for v in verbs}
 
