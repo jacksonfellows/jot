@@ -318,7 +318,7 @@ roll_func = np.vectorize(lambda x: np.random.random() if x == 0 else np.random.r
 
 def shape_bfunc(x, y):
     shape = tuple(int(x_) for x_ in x)
-    while len(y.shape) < len(shape): y = y.reshape((*y.shape, 1))
+    while len(y.shape) < len(shape): y = y.reshape((1, *y.shape))
     return np.broadcast_to(y, shape)
 
 verbs = [
