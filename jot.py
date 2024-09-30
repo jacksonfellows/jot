@@ -227,7 +227,7 @@ class Verb(Operator):
                 return self.ufunc(x)
             while len(x.shape) < self.urank: x = x.reshape((*x.shape, 1))
             if len(x.shape) > self.urank:
-                if self.urank == 0 and type(self.ufunc) == np.ufunc:
+                if self.urank == 0 and type(self.ufunc) in (np.vectorize, np.ufunc):
                     pass
                 else:
                     raise TODO_ERROR
@@ -314,7 +314,7 @@ def integers_func(shape):
     count = prod(ishape)
     return np.arange(count).reshape(ishape)
 
-roll_func = np.frompyfunc(lambda x: np.random.random() if x == 0 else np.random.randint(x), nin=1, nout=1)
+roll_func = np.vectorize(lambda x: np.random.random() if x == 0 else np.random.randint(x))
 
 def shape_bfunc(x, y):
     shape = tuple(int(x_) for x_ in x)
