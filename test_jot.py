@@ -43,11 +43,25 @@ test_cases = [
     ("i.10 +\"[1 1] i.10", 2*np.arange(10)),
 ]
 
+equiv_cases = [
+    ("+\"[0 1]~ i.10", "+/~ i.10")
+]
+
+def assert_same(x, y):
+    assert x.shape == y.shape
+    assert np.all(x == y)
+
 def test_basic():
     for s, a in test_cases:
         print(f"{s} => {a}")
         if type(a) in (int, float):
             a = np.array(a)
         res = eval_expr(parse_expr(s))
-        assert res.shape == a.shape
-        assert np.all(res == a)
+        assert_same(a, res)
+
+def test_equiv():
+    for a, b in equiv_cases:
+        print(f"{a} <=> {b}")
+        x = eval_expr(parse_expr(a))
+        y = eval_expr(parse_expr(b))
+        assert_same(x, y)
