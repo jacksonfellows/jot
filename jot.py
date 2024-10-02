@@ -161,18 +161,22 @@ class Tokenizer:
 
         while self.is_space(): self.i += 1
 
+        if self.s[self.i] == "∞":
+            self.i += 1
+            return literal_token(np.array(float("inf")))
+
         if self.is_num_char():
             start_i = self.i
             while self.is_num_char(): self.i += 1
             return literal_token(np.array(float(self.s[start_i:self.i])))
-        else:
-            start_i = self.i
-            while self.is_token_char():
-                self.i += 1
-                name = self.s[start_i:self.i]
-                if name in constant_tokens:
-                    return constant_tokens[name]
-            assert 0
+
+        start_i = self.i
+        while self.is_token_char():
+            self.i += 1
+            name = self.s[start_i:self.i]
+            if name in constant_tokens:
+                return constant_tokens[name]
+        assert 0
 
 class Parser:
     def __init__(self, s):
