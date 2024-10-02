@@ -209,6 +209,10 @@ def parse_expr(s):
 # Crude evaluation.
 
 def apply_as_rank_unary(x, rank, ufunc):
+    # Special-case numpy ufuncs:
+    if rank == 0 and type(ufunc) in (np.ufunc, np.vectorize):
+        return ufunc(x)
+
     if rank == INF:
         return ufunc(x)
     if len(x.shape) <= rank:
@@ -233,6 +237,10 @@ def view_as_rank(x, rank):
             yield x[i]
 
 def apply_as_rank_binary(x, y, rank1, rank2, bfunc):
+    # Special-case numpy ufuncs:
+    if rank1 == 0 and rank2 == 0 and type(bfunc) in (np.ufunc, np.vectorize):
+        return bfunc(x, y)
+
     if rank1 == INF:
         return apply_as_rank_unary(y, rank2, lambda y: bfunc(x, y))
     if rank2 == INF:
