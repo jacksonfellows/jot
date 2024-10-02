@@ -40,9 +40,14 @@ test_cases = [
     ("+/\"2 [[0 1 2 3] [4 5 6 7]]", np.array([4, 6, 8, 10])),
     ("+/\"∞ [[0 1 2 3] [4 5 6 7]]", np.array([4, 6, 8, 10])),
     ("i.5 +\"[0 ∞] i.4", np.array([[0, 1, 2, 3], [1, 2, 3, 4], [2, 3, 4, 5], [3, 4, 5, 6], [4, 5, 6, 7]])),
+    ("i.10 +\"[1 1] i.10", 2*np.arange(10)),
 ]
 
 def test_basic():
     for s, a in test_cases:
         print(f"{s} => {a}")
-        assert np.all(eval_expr(parse_expr(s)) == a)
+        if type(a) in (int, float):
+            a = np.array(a)
+        res = eval_expr(parse_expr(s))
+        assert res.shape == a.shape
+        assert np.all(res == a)

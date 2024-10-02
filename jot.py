@@ -218,7 +218,7 @@ def apply_as_rank_unary(x, rank, ufunc):
     i_res = [(i, ufunc(x[i])) for i in np.ndindex(shape)]
     # Confirm same-shaped results:
     assert all(res.shape == i_res[0][1].shape for _,res in i_res)
-    out = np.zeros((shape + i_res[0][1].shape))
+    out = np.zeros(shape + i_res[0][1].shape)
     for i,res in i_res:
         out[i] = res
     return out
@@ -248,7 +248,7 @@ def apply_as_rank_binary(x, y, rank1, rank2, bfunc):
     x_iter, y_iter = view_as_rank(x, rank1), view_as_rank(y, rank2)
     shape = x.shape[:len(x.shape) - int(min(rank1, rank2))]
     i_res = [(i, bfunc(x_, y_)) for i,x_,y_ in zip(np.ndindex(shape), itertools.cycle(x_iter), itertools.cycle(y_iter))]
-    out = np.zeros(x.shape + i_res[0][1].shape)
+    out = np.zeros(shape + i_res[0][1].shape)
     for i,res in i_res:
         out[i] = res
     return out
