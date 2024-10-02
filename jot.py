@@ -212,13 +212,43 @@ def apply_as_rank_unary(x, rank, ufunc):
     if rank == INF:
         return ufunc(x)
     if len(x.shape) <= rank:
-        while len(x.shape) < rank: x = x.reshape((1, *x.shape))
+        while len(x.shape) < rank: x = x.reshape((*x.shape, 1))
         return ufunc(x)
     shape = x.shape[:len(x.shape) - int(rank)]
     i_res = [(i, ufunc(x[i])) for i in np.ndindex(shape)]
     # Confirm same-shaped results:
     assert all(res.shape == i_res[0][1].shape for _,res in i_res)
     out = np.zeros((shape + i_res[0][1].shape))
+    for i,res in i_res:
+        out[i] = res
+    return out
+
+def view_as_rank(x, rank):
+    if len(x.shape) <= rank:
+        while len(x.shape) < rank: x = x.reshape((1, *x.shape))
+        yield x
+    else:
+        shape = x.shape[:len(x.shape) - int(rank)]
+        for i in np.ndindex(shape):
+            yield x[i]
+
+def apply_as_rank_binary(x, y, rank1, rank2, bfunc):
+    if rank1 == INF:
+        return apply_as_rank_unary(y, rank2, lambda y: bfunc(x, y))
+    if rank2 == INF:
+        return apply_as_rank_unary(x, rank1, lambda x: bfunc(x, y))
+    # Convert arguments to common shape.
+    if len(x.shape) > len(y.shape):
+        while len(y.shape) < len(x.shape): y = y.reshape((*y.shape, 1))
+        y = np.broadcast_to(y, x.shape)
+    elif len(y.shape) > len(x.shape):
+        while len(x.shape) < len(y.shape): x = x.reshape((*x.shape, 1))
+        x = np.broadcast_to(x, y.shape)
+    # Apply verb. Got to be a cleaner way.
+    x_iter, y_iter = view_as_rank(x, rank1), view_as_rank(y, rank2)
+    shape = x.shape[:len(x.shape) - int(min(rank1, rank2))]
+    i_res = [(i, bfunc(x_, y_)) for i,x_,y_ in zip(np.ndindex(shape), itertools.cycle(x_iter), itertools.cycle(y_iter))]
+    out = np.zeros(x.shape + i_res[0][1].shape)
     for i,res in i_res:
         out[i] = res
     return out
@@ -253,15 +283,7 @@ class Verb(Operator):
         if len(args) == 1:
             return apply_as_rank_unary(args[0], self.urank, self.ufunc)
         if len(args) == 2:
-            x, y = args
-            if (self.brank1 == INF or self.brank1 == len(x.shape)) and (self.brank2 == INF or self.brank2 == len(y.shape)):
-                return self.bfunc(x, y)
-            if type(self.bfunc) == np.ufunc and self.brank1 == self.brank2:
-                S = max(len(x.shape), len(y.shape), self.brank1)
-                while len(x.shape) < S: x = x.reshape((*x.shape, 1))
-                while len(y.shape) < S: y = y.reshape((*y.shape, 1))
-                return self.bfunc(x, y)
-            raise TODO_ERROR
+            return apply_as_rank_binary(args[0], args[1], self.brank1, self.brank2, self.bfunc)
         raise EvalError("Too many nouns for verb {self.symbol}.")
 
 class SlashAdverb(Operator):
@@ -307,19 +329,33 @@ class RankedVerb(Operator):
         if len(args) == 1:
             return apply_as_rank_unary(args[0], self.urank, lambda x: self.verb.eval([x]))
         elif len(args) == 2:
-            raise EvalError("Not supported.")
+            return apply_as_rank_binary(args[0], args[1], self.brank1, self.brank2, lambda x,y: self.verb.eval([x,y]))
         else:
             raise EvalError("Too many nouns.")
 
 
 @dataclass
 class Rank(Operator):
-    rank: Any                   # TODO support different binary ranks
+    def __init__(self, rank):
+        rank = eval_expr(rank)
+        assert type(rank) == np.ndarray
+        if len(rank.shape) == 0:
+            self.urank = self.brank1 = self.brank2 = rank
+        elif len(rank.shape) == 1:
+            if len(rank) == 1:
+                self.urank = self.brank1 = self.brank2 = rank[0]
+            elif len(rank) == 2:
+                self.brank1, self.brank2 = rank
+                self.urank = self.brank2
+            elif len(rank) == 3:
+                self.urank, self.brank1, self.brank2 = rank
+        else:
+            assert 0
 
     def eval(self, args):
         assert len(args) == 1
         verb: Verb = args[0]
-        return RankedVerb(verb=verb, urank=self.rank, brank1=self.rank, brank2=self.rank)
+        return RankedVerb(verb=verb, urank=self.urank, brank1=self.brank1, brank2=self.brank2)
 
 def integers_func(shape):
     # TODO handle negative shapes like in J?
