@@ -6,6 +6,8 @@ from typing import Any
 
 import numpy as np
 
+INF = float("inf")
+
 # --------------------------------------------------------------------------------
 # Bastardized Pratt parser.
 
@@ -163,7 +165,7 @@ class Tokenizer:
 
         if self.s[self.i] == "∞":
             self.i += 1
-            return literal_token(np.array(float("inf")))
+            return literal_token(np.array(INF))
 
         if self.is_num_char():
             start_i = self.i
@@ -206,6 +208,21 @@ def parse_expr(s):
 # --------------------------------------------------------------------------------
 # Crude evaluation.
 
+def apply_as_rank_unary(x, rank, ufunc):
+    if rank == INF:
+        return ufunc(x)
+    if len(x.shape) <= rank:
+        while len(x.shape) < rank: x = x.reshape((1, *x.shape))
+        return ufunc(x)
+    shape = x.shape[:len(x.shape) - int(rank)]
+    i_res = [(i, ufunc(x[i])) for i in np.ndindex(shape)]
+    # Confirm same-shaped results:
+    assert all(res.shape == i_res[0][1].shape for _,res in i_res)
+    out = np.zeros((shape + i_res[0][1].shape))
+    for i,res in i_res:
+        out[i] = res
+    return out
+
 class EvalError(ValueError):
     pass
 
@@ -234,19 +251,10 @@ class Verb(Operator):
 
     def eval(self, args):
         if len(args) == 1:
-            x = args[0]
-            if self.urank == float("inf"):
-                return self.ufunc(x)
-            while len(x.shape) < self.urank: x = x.reshape((*x.shape, 1))
-            if len(x.shape) > self.urank:
-                if self.urank == 0 and type(self.ufunc) in (np.vectorize, np.ufunc):
-                    pass
-                else:
-                    raise TODO_ERROR
-            return self.ufunc(x)
+            return apply_as_rank_unary(args[0], self.urank, self.ufunc)
         if len(args) == 2:
             x, y = args
-            if (self.brank1 == float("inf") or self.brank1 == len(x.shape)) and (self.brank2 == float("inf") or self.brank2 == len(y.shape)):
+            if (self.brank1 == INF or self.brank1 == len(x.shape)) and (self.brank2 == INF or self.brank2 == len(y.shape)):
                 return self.bfunc(x, y)
             if type(self.bfunc) == np.ufunc and self.brank1 == self.brank2:
                 S = max(len(x.shape), len(y.shape), self.brank1)
@@ -264,10 +272,10 @@ class SlashAdverb(Operator):
         assert type(func) == np.ufunc
         return Verb(
             symbol=None,
-            urank=float("inf"),
+            urank=INF,
             ufunc=lambda x: func.reduce(x, axis=0),
-            brank1=float("inf"),
-            brank2=float("inf"),
+            brank1=INF,
+            brank2=INF,
             bfunc=lambda x, y: func.outer(x, y)
         )
 
@@ -279,7 +287,7 @@ class TildeAdverb(Operator):
         verb: Verb = args[0]
         return Verb(
             symbol=None,
-            urank=float("inf"),
+            urank=INF,
             ufunc=lambda x: verb.eval([x, x]),
             brank1=None,
             brank2=None,
@@ -291,20 +299,15 @@ TILDE_ADVERB_OPERATOR = TildeAdverb()
 @dataclass
 class RankedVerb(Operator):
     verb: Verb
-    rank: Any
+    urank: Any
+    brank1: Any
+    brank2: Any
 
     def eval(self, args):
         if len(args) == 1:
-            x = args[0]
-            if len(x.shape) <= self.rank:
-                return self.verb.eval([x])
-            shape = x.shape[:int(self.rank)]
-            res = []
-            for i in np.ndindex(shape):
-                res.append(self.verb.eval([x[i]]))
-            return np.stack(res)
+            return apply_as_rank_unary(args[0], self.urank, lambda x: self.verb.eval([x]))
         elif len(args) == 2:
-            raise TODO_ERROR
+            raise EvalError("Not supported.")
         else:
             raise EvalError("Too many nouns.")
 
@@ -316,7 +319,7 @@ class Rank(Operator):
     def eval(self, args):
         assert len(args) == 1
         verb: Verb = args[0]
-        return RankedVerb(verb=verb, rank=self.rank)
+        return RankedVerb(verb=verb, urank=self.rank, brank1=self.rank, brank2=self.rank)
 
 def integers_func(shape):
     # TODO handle negative shapes like in J?
@@ -341,9 +344,9 @@ verbs = [
     Verb(symbol="*", urank=0, ufunc=np.sign, brank1=0, brank2=0, bfunc=np.multiply),
     Verb(symbol="i.", urank=1, ufunc=integers_func, brank1=None, brank2=None, bfunc=None),
     Verb(symbol="?", urank=0, ufunc=roll_func, brank1=None, brank2=None, bfunc=None),
-    Verb(symbol="$", urank=float("inf"), ufunc=lambda x: np.array(x.shape), brank1=1, brank2=float("inf"), bfunc=shape_bfunc),
+    Verb(symbol="$", urank=INF, ufunc=lambda x: np.array(x.shape), brank1=1, brank2=INF, bfunc=shape_bfunc),
     Verb(symbol="=", urank=None, ufunc=None, brank1=0, brank2=0, bfunc=np.equal),
-    Verb(symbol="'", urank=float("inf"), ufunc=np.transpose, brank1=None, brank2=None, bfunc=None)
+    Verb(symbol="'", urank=INF, ufunc=np.transpose, brank1=None, brank2=None, bfunc=None)
 ]
 symbol_to_verb = {VerbSymbol(v.symbol): v for v in verbs}
 
