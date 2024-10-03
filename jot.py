@@ -237,14 +237,11 @@ def view_as_rank(x, rank):
             yield x[i]
 
 def apply_as_rank_binary(x, y, rank1, rank2, bfunc):
-    # Special-case numpy ufuncs:
-    if rank1 == 0 and rank2 == 0 and type(bfunc) in (np.ufunc, np.vectorize):
-        return bfunc(x, y)
-
     if rank1 == INF:
         return apply_as_rank_unary(y, rank2, lambda y: bfunc(x, y))
     if rank2 == INF:
         return apply_as_rank_unary(x, rank1, lambda x: bfunc(x, y))
+
     # Convert arguments to common shape.
     if len(x.shape) > len(y.shape):
         while len(y.shape) < len(x.shape): y = y.reshape((*y.shape, 1))
@@ -252,6 +249,11 @@ def apply_as_rank_binary(x, y, rank1, rank2, bfunc):
     elif len(y.shape) > len(x.shape):
         while len(x.shape) < len(y.shape): x = x.reshape((*x.shape, 1))
         x = np.broadcast_to(x, y.shape)
+
+    # Special-case numpy ufuncs:
+    if rank1 == 0 and rank2 == 0 and type(bfunc) in (np.ufunc, np.vectorize):
+        return bfunc(x, y)
+
     # Apply verb. Got to be a cleaner way.
     x_iter, y_iter = view_as_rank(x, rank1), view_as_rank(y, rank2)
     shape = x.shape[:len(x.shape) - int(min(rank1, rank2))]
