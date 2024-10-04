@@ -9,144 +9,46 @@ import numpy as np
 INF = float("inf")
 
 # --------------------------------------------------------------------------------
-# Bastardized Pratt parser.
+# Tokenizer.
 
-VerbSymbol = namedtuple("VerbSymbol", ["symbol"])
+VerbToken = namedtuple("VerbToken", ["symbol"])
+AdverbToken = namedtuple("AdverbToken", ["symbol"])
+ConjunctionToken = namedtuple("ConjunctionToken", ["symbol"])
+
+END_TOKEN = "END_TOKEN"
+LEFT_PAREN_TOKEN = "LEFT_PAREN_TOKEN"
+RIGHT_PAREN_TOKEN = "RIGHT_PAREN_TOKEN"
+LEFT_BRACKET_TOKEN = "LEFT_BRACKET_TOKEN"
+RIGHT_BRACKET_TOKEN = "RIGHT_BRACKET_TOKEN"
 
 class ParseError(ValueError):
     pass
 
-Token = namedtuple("Token", ["lbp", "led", "nud", "name"], defaults=[None]*4)
+verb_tokens = set(["+", "-", "*", "i.", "<.", ">.", "=", "$"])
+adverb_tokens = set(["/", "~"])
+# " is an adverb but is treated like a conjunction bc. of how the parser works.
+conjunction_tokens = set(["@", "\""])
 
-def lparen_nud(parser):
-    e = parser.expr(0)
-    if parser.token.name != "rparen":
-        raise ParseError("Expecting closing ).")
-    parser.token = parser.next()
-    return e
+binary_verb_prec_levels = (
+    ("$"),
+    ("*"),
+    ("+", "-"),
+    (">.", "<.", "=")
+)
 
-def lbracket_nud(parser):
-    es = []
-    while parser.token.name != "rbracket":
-         # rbp=10 allows negatives in array literals as expected.
-        es.append(parser.expr(10))
-    parser.token = parser.next()
-    return (ARRAY_LITERAL_OPERATOR, *es)
+TRANSPOSE_TOKEN = "TRANSPOSE_TOKEN"
 
-# Hacky system to modify verbs.
+token_chars = "".join(verb_tokens | adverb_tokens | conjunction_tokens | set("'"))
 
-adverb_symbols = ["/", "\"", "~"]
-
-def parse_adverbs(parser, verb):
-    while parser.token.name in adverb_symbols:
-        verb = (parser.expr(40), verb) # ?
-    return verb
-
-def unary_verb_token(name, prec):
-    def nud(parser):
-        return (parse_adverbs(parser, VerbSymbol(name)), parser.expr(prec))
-    return nud
-
-def binary_verb_token(name, prec):
-    def led(parser, left):
-        return (parse_adverbs(parser, VerbSymbol(name)), left, parser.expr(prec))
-    return led
-
-end_token = Token(lbp=0, name="end")
-
-constant_tokens = {
-    "+": Token(
-        lbp=10,
-        nud=unary_verb_token("+", 30),
-        led=binary_verb_token("+", 10),
-    ),
-    "-": Token(
-        lbp=10,
-        nud=unary_verb_token("-", 30),
-        led=binary_verb_token("-", 10),
-    ),
-    "*": Token(
-        lbp=20,
-        nud=unary_verb_token("*", 30),
-        led=binary_verb_token("*", 20),
-    ),
-    "(": Token(
-        lbp=0,
-        nud=lparen_nud
-    ),
-    ")": Token(
-        name="rparen",
-        lbp=0,
-    ),
-    "[": Token(
-        lbp=0,
-        nud=lbracket_nud
-    ),
-    "]": Token(
-        name="rbracket",
-        lbp=0
-    ),
-    "/": Token(
-        name="/",
-        lbp=0,
-        nud=lambda parser: SLASH_ADVERB_OPERATOR
-    ),
-    "~": Token(
-        name="~",
-        lbp=0,
-        nud=lambda parser: TILDE_ADVERB_OPERATOR
-    ),
-    "\"": Token(
-        name="\"",
-        lbp=0,
-        nud=lambda parser: Rank(parser.expr(50)),
-    ),
-    ">.": Token(
-        lbp=5,
-        nud=unary_verb_token(">.", 20),
-        led=binary_verb_token(">.", 5)
-    ),
-    "<.": Token(
-        lbp=5,
-        nud=unary_verb_token("<.", 20),
-        led=binary_verb_token("<.", 5)
-    ),
-    "i.": Token(
-        lbp=0,                  # ?
-        nud=unary_verb_token("i.", 20),
-    ),
-    "?": Token(
-        lbp=0,                  # ?
-        nud=unary_verb_token("?", 20)
-    ),
-    "$": Token(
-        lbp=15,
-        nud=unary_verb_token("$", 20),
-        led=binary_verb_token("$", 15)
-    ),
-    "=": Token(
-        lbp=5,
-        nud=unary_verb_token("=", 20),
-        led=binary_verb_token("=", 5)
-    ),
-    "'": Token(
-        lbp=30,
-        led=lambda parser, left: (parse_adverbs(parser, VerbSymbol("'")), left)
-    )
-}
-
-token_chars = set("".join(constant_tokens.keys()))
-
-def literal_token(val):
-    return Token(
-        lbp=0,                  # ?
-        nud=lambda parser: val,
-    )
+LiteralToken = namedtuple("LiteralToken", ["value"])
 
 class Tokenizer:
     def __init__(self, s):
         self.s = s
         self.i = 0
+
+    def curr(self):
+        return self.s[self.i]
 
     def is_num_char(self):
         return self.i < len(self.s) and self.s[self.i] in "0123456789."
@@ -159,54 +61,161 @@ class Tokenizer:
 
     def consume(self):
         if self.i >= len(self.s):
-            return end_token
+            return END_TOKEN
 
         while self.is_space(): self.i += 1
 
-        if self.s[self.i] == "∞":
+        char_to_token = {
+            "∞": LiteralToken(np.array(INF)),
+            "(": LEFT_PAREN_TOKEN,
+            ")": RIGHT_PAREN_TOKEN,
+            "[": LEFT_BRACKET_TOKEN,
+            "]": RIGHT_BRACKET_TOKEN
+        }
+
+        if self.curr() in char_to_token:
+            x = char_to_token[self.curr()]
             self.i += 1
-            return literal_token(np.array(INF))
+            return x
 
         if self.is_num_char():
             start_i = self.i
             while self.is_num_char(): self.i += 1
-            return literal_token(np.array(float(self.s[start_i:self.i])))
+            return LiteralToken(np.array(float(self.s[start_i:self.i])))
 
         start_i = self.i
         while self.is_token_char():
             self.i += 1
             name = self.s[start_i:self.i]
-            if name in constant_tokens:
-                return constant_tokens[name]
+            if name in verb_tokens:
+                return VerbToken(name)
+            if name in adverb_tokens:
+                return AdverbToken(name)
+            if name in conjunction_tokens:
+                return ConjunctionToken(name)
+            if name == "'":
+                return TRANSPOSE_TOKEN
         assert 0
+
+# --------------------------------------------------------------------------------
+# Parser.
+
+def source_verb(expr):
+    if type(expr) == VerbToken:
+        return expr.symbol
+    if type(expr) == str:
+        return expr
+    assert type(expr) == tuple
+    if expr[0] == "apply_adverb":
+        return source_verb(expr[2])
+    if expr[0] == "apply_conjunction":
+        if expr[1] == ConjunctionToken("\""):
+            return source_verb(expr[2])
+        return "+"              # Fake reasonable precedence.
 
 class Parser:
     def __init__(self, s):
-        self.next = Tokenizer(s).consume
-        self.token = self.next()
+        self.next_token = Tokenizer(s).consume
+        self.current_token = self.next_token()
 
-    def parse_expr(self):
-        return self.expr(0)
+    def consume(self):
+        x = self.current_token
+        self.current_token = self.next_token()
+        return x
 
-    def expr(self, rbp):
-        t = self.token
-        self.token = self.next()
-        left = t.nud(self)
-        while rbp < self.token.lbp:
-            t = self.token
-            self.token = self.next()
-            left = t.led(self, left)
-        return left
+    def parse_expr(self, array_literal=False):
+        atoms = []
+
+        if array_literal:
+            while self.current_token != RIGHT_BRACKET_TOKEN:
+                atoms.append(self.parse_atom())
+        else:
+            atom = self.parse_atom()
+            while atom is not None:
+                atoms.append(atom)
+                atom = self.parse_atom()
+
+        # Transpose (special case).
+        i = 0
+        while i < len(atoms):
+            if atoms[i] == TRANSPOSE_TOKEN:
+                atoms[i-1:i+1] = [("apply_verb", "'", atoms[i-1])]
+            else:
+                i += 1
+        to_symbol = lambda x: x.symbol if type(x) == VerbToken else x
+        # Adverbs.
+        i = 0
+        while i < len(atoms):
+            if type(atoms[i]) == AdverbToken:
+                atoms[i-1:i+1] = [("apply_adverb", atoms[i].symbol, to_symbol(atoms[i-1]))]
+            else:
+                i += 1
+        # Conjunctions.
+        i = 0
+        while i < len(atoms):
+            if type(atoms[i]) == ConjunctionToken:
+                atoms[i-1:i+2] = [("apply_conjunction", atoms[i].symbol, to_symbol(atoms[i-1]), to_symbol(atoms[i+1]))]
+            else:
+                i += 1
+        # Verbs.
+        is_verb = lambda x: type(x) == VerbToken or (type(x) == tuple and x[0] in ("apply_adverb", "apply_conjunction"))
+        # First, handle unary verbs.
+        i = len(atoms)-1
+        while len(atoms) > 1 and i >= 0:
+            if is_verb(atoms[i]) and (i == 0 or is_verb(atoms[i-1])):
+                atoms[i:i+2] = [("apply_verb", to_symbol(atoms[i]), atoms[i+1])]
+            else:
+                i -= 1
+        # Next, handle binary verbs (respecting precedence).
+        for verbs in binary_verb_prec_levels:
+            i = len(atoms)-2
+            while len(atoms) > 1 and i >= 1:
+                if is_verb(atoms[i]) and source_verb(atoms[i]) in verbs:
+                    atoms[i-1:i+2] = [("apply_verb", to_symbol(atoms[i]), atoms[i-1], atoms[i+1])]
+                i -= 1
+
+        if array_literal:
+            return atoms
+        else:
+            if len(atoms) != 1: raise ParseError()
+            return atoms[0]
+
+    def parse_atom(self):
+        if type(self.current_token) == LiteralToken:
+            return self.consume().value
+        if self.current_token == LEFT_PAREN_TOKEN:
+            return self.parse_parens()
+        if self.current_token == LEFT_BRACKET_TOKEN:
+            return self.parse_array_literal()
+        if type(self.current_token) in (VerbToken, AdverbToken, ConjunctionToken):
+            return self.consume()
+        if self.current_token == TRANSPOSE_TOKEN:
+            return self.consume()
+
+    def parse_parens(self):
+        assert self.current_token == LEFT_PAREN_TOKEN
+        self.consume()
+        x = self.parse_expr()
+        assert self.current_token == RIGHT_PAREN_TOKEN
+        self.consume()
+        return x
+
+    def parse_array_literal(self):
+        assert self.current_token == LEFT_BRACKET_TOKEN
+        self.consume()
+        arr = self.parse_expr(array_literal=True)
+        assert self.current_token == RIGHT_BRACKET_TOKEN
+        self.consume()
+        return ("array_literal", *arr)
 
 def parse_expr(s):
-    p = Parser(s)
-    expr = p.parse_expr()
-    if p.token.name != "end":
-        raise ParseError("Could not parse to end of input.")
-    return expr
+    parser = Parser(s)
+    x = parser.parse_expr()
+    assert parser.current_token == END_TOKEN
+    return x
 
 # --------------------------------------------------------------------------------
-# Crude evaluation.
+# Evaluation.
 
 def apply_as_rank_unary(x, rank, ufunc):
     # Special-case numpy ufuncs:
@@ -268,104 +277,7 @@ class EvalError(ValueError):
 
 TODO_ERROR = EvalError("Not yet implemented!")
 
-class Operator:
-    pass
-
-class ArrayLiteral(Operator):
-    def eval(self, args):
-        return np.array(args)
-
-    def __repr__(self):
-        return "ArrayLiteral()"
-
-ARRAY_LITERAL_OPERATOR = ArrayLiteral()
-
-@dataclass
-class Verb(Operator):
-    symbol: str
-    urank: Any
-    brank1: Any
-    brank2: Any
-    ufunc: Any
-    bfunc: Any
-
-    def eval(self, args):
-        if len(args) == 1:
-            return apply_as_rank_unary(args[0], self.urank, self.ufunc)
-        if len(args) == 2:
-            return apply_as_rank_binary(args[0], args[1], self.brank1, self.brank2, self.bfunc)
-        raise EvalError("Too many nouns for verb {self.symbol}.")
-
-class SlashAdverb(Operator):
-    def eval(self, args):
-        assert len(args) == 1
-        verb: Verb = args[0]
-        func = verb.bfunc
-        assert type(func) == np.ufunc
-        return Verb(
-            symbol=None,
-            urank=INF,
-            ufunc=lambda x: func.reduce(x, axis=0),
-            brank1=INF,
-            brank2=INF,
-            bfunc=lambda x, y: func.outer(x, y)
-        )
-
-SLASH_ADVERB_OPERATOR = SlashAdverb()
-
-class TildeAdverb(Operator):
-    def eval(self, args):
-        assert len(args) == 1
-        verb: Verb = args[0]
-        return Verb(
-            symbol=None,
-            urank=INF,
-            ufunc=lambda x: verb.eval([x, x]),
-            brank1=None,
-            brank2=None,
-            bfunc=None
-        )
-
-TILDE_ADVERB_OPERATOR = TildeAdverb()
-
-@dataclass
-class RankedVerb(Operator):
-    verb: Verb
-    urank: Any
-    brank1: Any
-    brank2: Any
-
-    def eval(self, args):
-        if len(args) == 1:
-            return apply_as_rank_unary(args[0], self.urank, lambda x: self.verb.eval([x]))
-        elif len(args) == 2:
-            return apply_as_rank_binary(args[0], args[1], self.brank1, self.brank2, lambda x,y: self.verb.eval([x,y]))
-        else:
-            raise EvalError("Too many nouns.")
-
-
-@dataclass
-class Rank(Operator):
-    def __init__(self, rank):
-        rank = eval_expr(rank)
-        assert type(rank) == np.ndarray
-        if len(rank.shape) == 0:
-            self.urank = self.brank1 = self.brank2 = rank
-        elif len(rank.shape) == 1:
-            if len(rank) == 1:
-                self.urank = self.brank1 = self.brank2 = rank[0]
-            elif len(rank) == 2:
-                self.brank1, self.brank2 = rank
-                self.urank = self.brank2
-            elif len(rank) == 3:
-                self.urank, self.brank1, self.brank2 = rank
-        else:
-            assert 0
-
-    def eval(self, args):
-        assert len(args) == 1
-        verb: Verb = args[0]
-        return RankedVerb(verb=verb, urank=self.urank, brank1=self.brank1, brank2=self.brank2)
+Verb = namedtuple("Verb", ["symbol", "urank", "ufunc", "brank1", "brank2", "bfunc"])
 
 def integers_func(shape):
     # TODO handle negative shapes like in J?
@@ -394,21 +306,89 @@ verbs = [
     Verb(symbol="=", urank=None, ufunc=None, brank1=0, brank2=0, bfunc=np.equal),
     Verb(symbol="'", urank=INF, ufunc=np.transpose, brank1=None, brank2=None, bfunc=None)
 ]
-symbol_to_verb = {VerbSymbol(v.symbol): v for v in verbs}
+symbol_to_verb = {v.symbol: v for v in verbs}
+
+def eval_verb(verb, *args):
+    if len(args) == 1:
+        return apply_as_rank_unary(args[0], verb.urank, verb.ufunc)
+    if len(args) == 2:
+        return apply_as_rank_binary(args[0], args[1], verb.brank1, verb.brank2, verb.bfunc)
+    raise EvalError(f"Too many nouns for verb {verb_symbol}.")
+
+def eval_slash(verb):
+    func = verb.bfunc
+    assert type(func) == np.ufunc
+    return Verb(
+        symbol=None,
+        urank=INF,
+        ufunc=lambda x: func.reduce(x, axis=0),
+        brank1=INF,
+        brank2=INF,
+        bfunc=lambda x, y: func.outer(x, y)
+    )
+
+def eval_tilde(verb):
+    return Verb(
+        symbol=None,
+        urank=INF,
+        ufunc=lambda x: eval_verb(verb, x, x),
+        brank1=None,
+        brank2=None,
+        bfunc=None
+    )
+
+def eval_at(u, v):
+    return Verb(
+        symbol=None,
+        urank=v.urank,
+        ufunc=lambda x: u.ufunc(v.ufunc(x)),
+        brank1=self.v.brank1,
+        brank2=self.v.brank2,
+        bfunc=lambda x, y: u.ufunc(v.bfunc(x, y))
+    )
+
+def eval_rank(verb, rank):
+    assert type(rank) == np.ndarray
+    if len(rank.shape) == 0:
+        urank = brank1 = brank2 = rank
+    elif len(rank.shape) == 1:
+        if len(rank) == 1:
+            urank = brank1 = brank2 = rank[0]
+        elif len(rank) == 2:
+            brank1, brank2 = rank
+            urank = brank2
+        elif len(rank) == 3:
+            urank, brank1, brank2 = rank
+
+    return Verb(
+        symbol=None,
+        urank=urank,
+        ufunc=lambda x: eval_verb(verb, x),
+        brank1=brank1,
+        brank2=brank2,
+        bfunc=lambda x,y: eval_verb(verb, x, y),
+    )
+
+modifiers = {
+    "/": eval_slash,
+    "~": eval_tilde,
+    "@": eval_at,
+    "\"": eval_rank
+}
 
 def eval_expr(expr):
-    if type(expr) == np.ndarray:
-        return expr
-    if type(expr) == VerbSymbol:
-        return symbol_to_verb[expr]
-
     if type(expr) == tuple:
-        head = eval_expr(expr[0])
-        tail = [eval_expr(e) for e in expr[1:]]
-        assert isinstance(head, Operator)
-        return head.eval(tail)
-
-    return expr
+        args = [eval_expr(x) for x in expr[1:]]
+        if expr[0] == "array_literal":
+            return np.array(args)
+        if expr[0] == "apply_verb":
+            return eval_verb(*args)
+        if expr[0] in ("apply_adverb", "apply_conjunction"):
+            return modifiers[args[0]](*args[1:])
+    elif type(expr) == str and expr in symbol_to_verb:
+        return symbol_to_verb[expr]
+    else:
+        return expr
 
 def repl():
     while 1:
