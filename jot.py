@@ -24,14 +24,14 @@ RIGHT_BRACKET_TOKEN = "RIGHT_BRACKET_TOKEN"
 class ParseError(ValueError):
     pass
 
-verb_tokens = set(["+", "-", "*", "i.", "<.", ">.", "=", "$"])
+verb_tokens = set(["+", "-", "*", "i.", "<.", ">.", "=", "$", "."])
 adverb_tokens = set(["/", "~"])
 # " is an adverb but is treated like a conjunction bc. of how the parser works.
 conjunction_tokens = set(["@", "\""])
 
 binary_verb_prec_levels = (
     ("$"),
-    ("*"),
+    ("*", "."),
     ("+", "-"),
     (">.", "<.", "=")
 )
@@ -78,7 +78,7 @@ class Tokenizer:
             self.i += 1
             return x
 
-        if self.is_num_char():
+        if self.curr().isnumeric():
             start_i = self.i
             while self.is_num_char(): self.i += 1
             return LiteralToken(np.array(float(self.s[start_i:self.i])))
@@ -304,7 +304,8 @@ verbs = [
     Verb(symbol="?", urank=0, ufunc=roll_func, brank1=None, brank2=None, bfunc=None),
     Verb(symbol="$", urank=INF, ufunc=lambda x: np.array(x.shape), brank1=1, brank2=INF, bfunc=shape_bfunc),
     Verb(symbol="=", urank=None, ufunc=None, brank1=0, brank2=0, bfunc=np.equal),
-    Verb(symbol="'", urank=INF, ufunc=np.transpose, brank1=None, brank2=None, bfunc=None)
+    Verb(symbol="'", urank=INF, ufunc=np.transpose, brank1=None, brank2=None, bfunc=None),
+    Verb(symbol=".", urank=None, ufunc=None, brank1=INF, brank2=INF, bfunc=np.dot)
 ]
 symbol_to_verb = {v.symbol: v for v in verbs}
 
