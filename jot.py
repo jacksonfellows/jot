@@ -342,8 +342,8 @@ def eval_at(u, v):
         symbol=None,
         urank=v.urank,
         ufunc=lambda x: u.ufunc(v.ufunc(x)),
-        brank1=self.v.brank1,
-        brank2=self.v.brank2,
+        brank1=v.brank1,
+        brank2=v.brank2,
         bfunc=lambda x, y: u.ufunc(v.bfunc(x, y))
     )
 
