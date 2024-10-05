@@ -25,7 +25,7 @@ class ParseError(ValueError):
     pass
 
 verb_tokens = set(["+", "-", "*", "i.", "<.", ">.", "=", "$", ".", "|", "?", "sin", "cos", "tan", "asin", "acos", "atan", "√"])
-adverb_tokens = set(["/", "~"])
+adverb_tokens = set(["/", "~", "\\"])
 # " is an adverb but is treated like a conjunction bc. of how the parser works.
 conjunction_tokens = set(["@", "\""])
 
@@ -323,7 +323,7 @@ def eval_verb(verb, *args):
         return apply_as_rank_unary(args[0], verb.urank, verb.ufunc)
     if len(args) == 2:
         return apply_as_rank_binary(args[0], args[1], verb.brank1, verb.brank2, verb.bfunc)
-    raise EvalError(f"Too many nouns for verb {verb_symbol}.")
+    raise EvalError(f"Too many nouns for verb {verb}.")
 
 def eval_slash(verb):
     func = verb.bfunc
@@ -379,11 +379,29 @@ def eval_rank(verb, rank):
         bfunc=lambda x,y: eval_verb(verb, x, y),
     )
 
+def eval_sliding(verb, x):
+    L = x.shape[0]
+    res = []
+    for i in range(1,L+1):
+        res.append(eval_verb(verb, x[:i]))
+    return np.stack(res)
+
+def eval_bslash(verb):
+    return Verb(
+        symbol=None,
+        urank=INF,
+        ufunc=lambda x: eval_sliding(verb, x),
+        brank1=None,
+        brank2=None,
+        bfunc=None
+    )
+
 modifiers = {
     "/": eval_slash,
     "~": eval_tilde,
     "@": eval_at,
-    "\"": eval_rank
+    "\"": eval_rank,
+    "\\": eval_bslash
 }
 
 def eval_expr(expr):
