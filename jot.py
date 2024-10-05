@@ -5,6 +5,7 @@ from math import prod
 from typing import Any
 
 import numpy as np
+from numpy.lib.stride_tricks import sliding_window_view
 
 INF = float("inf")
 
@@ -386,14 +387,26 @@ def eval_sliding(verb, x):
         res.append(eval_verb(verb, x[:i]))
     return np.stack(res)
 
+def eval_sliding2(verb, x, y):
+    window = tuple(int(a) for a in x)
+    view = sliding_window_view(y, window_shape=window)
+    shape = view.shape[:-1]
+    i_res = [(i, eval_verb(verb, view[i])) for i in np.ndindex(shape)]
+    # Confirm same-shaped results:
+    assert all(res.shape == i_res[0][1].shape for _,res in i_res)
+    out = np.zeros(shape + i_res[0][1].shape)
+    for i,res in i_res:
+        out[i] = res
+    return out
+
 def eval_bslash(verb):
     return Verb(
         symbol=None,
         urank=INF,
         ufunc=lambda x: eval_sliding(verb, x),
-        brank1=None,
-        brank2=None,
-        bfunc=None
+        brank1=1,
+        brank2=INF,
+        bfunc=lambda x, y: eval_sliding2(verb, x, y)
     )
 
 modifiers = {
