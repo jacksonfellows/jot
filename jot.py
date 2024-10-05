@@ -28,7 +28,7 @@ class ParseError(ValueError):
 verb_tokens = set(["+", "-", "*", "i.", "<.", ">.", "=", "$", ".", "|", "?", "sin", "cos", "tan", "asin", "acos", "atan", "√"])
 adverb_tokens = set(["/", "~", "\\"])
 # " is an adverb but is treated like a conjunction bc. of how the parser works.
-conjunction_tokens = set(["@", "\"", ":@"])
+conjunction_tokens = set(["@", "\"", "@:"])
 
 binary_verb_prec_levels = (
     ("$"),
@@ -86,9 +86,12 @@ class Tokenizer:
             return LiteralToken(np.array(float(self.s[start_i:self.i])))
 
         start_i = self.i
+        print(">", start_i)
         while self.is_token_char():
             self.i += 1
             name = self.s[start_i:self.i]
+            if self.i+1 < len(self.s) and any(name + self.s[self.i] in t for t in (verb_tokens, adverb_tokens, conjunction_tokens)):
+                continue
             if name in verb_tokens:
                 return VerbToken(name)
             if name in adverb_tokens:
@@ -426,7 +429,7 @@ modifiers = {
     "@": eval_at,
     "\"": eval_rank,
     "\\": eval_bslash,
-    ":@": eval_colon_at,
+    "@:": eval_colon_at,
 }
 
 def eval_expr(expr):
