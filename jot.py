@@ -28,7 +28,7 @@ class ParseError(ValueError):
 verb_tokens = set(["+", "-", "*", "i.", "<.", ">.", "=", "$", ".", "|", "?", "sin", "cos", "tan", "asin", "acos", "atan", "√"])
 adverb_tokens = set(["/", "~", "\\"])
 # " is an adverb but is treated like a conjunction bc. of how the parser works.
-conjunction_tokens = set(["@", "\""])
+conjunction_tokens = set(["@", "\"", ":@"])
 
 binary_verb_prec_levels = (
     ("$"),
@@ -359,7 +359,8 @@ def eval_at(u, v):
     )
 
 def eval_rank(verb, rank):
-    assert type(rank) == np.ndarray
+    if type(rank) != np.ndarray:
+        rank = np.array(rank)
     if len(rank.shape) == 0:
         urank = brank1 = brank2 = rank
     elif len(rank.shape) == 1:
@@ -409,12 +410,23 @@ def eval_bslash(verb):
         bfunc=lambda x, y: eval_sliding2(verb, x, y)
     )
 
+def eval_colon_at(u, v):
+    return Verb(
+        symbol=None,
+        urank=INF,
+        ufunc=lambda x: eval_verb(u, eval_verb(v, x)),
+        brank1=INF,
+        brank2=INF,
+        bfunc=lambda x,y: eval_verb(u, eval_verb(v, x, y))
+    )
+
 modifiers = {
     "/": eval_slash,
     "~": eval_tilde,
     "@": eval_at,
     "\"": eval_rank,
-    "\\": eval_bslash
+    "\\": eval_bslash,
+    ":@": eval_colon_at,
 }
 
 def eval_expr(expr):
