@@ -44,6 +44,8 @@ test_cases = [
     ("[0 (-1) (-2) (-3)]", -np.arange(4)),
     (".~ i.[10 10]", np.arange(100).reshape(10,10)@np.arange(100).reshape(10,10)),
     ("|([10 10]$-1)", np.ones((10,10))),
+    ("√.~ i.10", np.linalg.norm(np.arange(10))),
+    ("1 atan 1", np.pi/4),
 ]
 
 equiv_cases = [
@@ -60,6 +62,8 @@ equiv_cases = [
     ("cos 0", "1"),
     ("cos π", "-1"),
     ("sin 0", "0"),
+    ("√81", "9"),
+    ("atan (tan 1)", "1")
 ]
 
 def assert_same(x, y):

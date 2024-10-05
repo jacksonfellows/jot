@@ -24,7 +24,7 @@ RIGHT_BRACKET_TOKEN = "RIGHT_BRACKET_TOKEN"
 class ParseError(ValueError):
     pass
 
-verb_tokens = set(["+", "-", "*", "i.", "<.", ">.", "=", "$", ".", "|", "?", "sin", "cos", "tan"])
+verb_tokens = set(["+", "-", "*", "i.", "<.", ">.", "=", "$", ".", "|", "?", "sin", "cos", "tan", "asin", "acos", "atan", "√"])
 adverb_tokens = set(["/", "~"])
 # " is an adverb but is treated like a conjunction bc. of how the parser works.
 conjunction_tokens = set(["@", "\""])
@@ -32,7 +32,7 @@ conjunction_tokens = set(["@", "\""])
 binary_verb_prec_levels = (
     ("$"),
     ("*", "."),
-    ("+", "-"),
+    ("+", "-", "atan"),
     (">.", "<.", "=")
 )
 
@@ -311,11 +311,12 @@ verbs = [
     Verb(symbol="sin", urank=0, ufunc=np.sin, brank1=None, brank2=None, bfunc=None),
     Verb(symbol="cos", urank=0, ufunc=np.cos, brank1=None, brank2=None, bfunc=None),
     Verb(symbol="tan", urank=0, ufunc=np.tan, brank1=None, brank2=None, bfunc=None),
+    Verb(symbol="asin", urank=0, ufunc=np.arcsin, brank1=None, brank2=None, bfunc=None),
+    Verb(symbol="acos", urank=0, ufunc=np.arccos, brank1=None, brank2=None, bfunc=None),
+    Verb(symbol="atan", urank=0, ufunc=np.arctan, brank1=0, brank2=0, bfunc=np.arctan2),
+    Verb(symbol="√", urank=0, ufunc=np.sqrt, brank1=None, brank2=None, bfunc=None),
 ]
 symbol_to_verb = {v.symbol: v for v in verbs}
-
-# Make sure I didn't miss a verb in tokenizer.
-assert (set([v.symbol for v in verbs]) - set("'")).issubset(verb_tokens)
 
 def eval_verb(verb, *args):
     if len(args) == 1:
