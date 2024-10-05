@@ -48,6 +48,9 @@ test_cases = [
     ("1 atan 1", np.pi/4),
     ("+/\\i.[3 3]", np.array([[0, 1, 2], [3, 5, 7], [9, 12, 15]])),
     ("4 $\\ i.100", 4*np.ones((97,1))),
+    ("i.10 < 100", np.ones(10)),
+    ("i.10 > 100", np.zeros(10)),
+    ("3 > 4", np.array(False)),
 ]
 
 equiv_cases = [
