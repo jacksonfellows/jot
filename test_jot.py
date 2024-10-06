@@ -51,6 +51,10 @@ test_cases = [
     ("i.10 < 100", np.ones(10)),
     ("i.10 > 100", np.zeros(10)),
     ("3 > 4", np.array(False)),
+    ("3÷4", np.array(3/4)),
+    ("÷(1+i.10)", 1/np.arange(1,11)),
+    ("[3 3]$3 ÷ 3", np.ones((3,3))),
+    ("1 + 1÷2 + 1", np.array(2.5)),
 ]
 
 equiv_cases = [

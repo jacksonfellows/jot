@@ -25,14 +25,14 @@ RIGHT_BRACKET_TOKEN = "RIGHT_BRACKET_TOKEN"
 class ParseError(ValueError):
     pass
 
-verb_tokens = set(["+", "-", "*", "i.", "<.", ">.", "=", "$", ".", "|", "?", "sin", "cos", "tan", "asin", "acos", "atan", "√", "<", ">"])
+verb_tokens = set(["+", "-", "*", "i.", "<.", ">.", "=", "$", ".", "|", "?", "sin", "cos", "tan", "asin", "acos", "atan", "√", "<", ">", "÷"])
 adverb_tokens = set(["/", "~", "\\"])
 # " is an adverb but is treated like a conjunction bc. of how the parser works.
 conjunction_tokens = set(["@", "\"", "@:"])
 
 binary_verb_prec_levels = (
     ("$"),
-    ("*", "."),
+    ("*", ".", "÷"),
     ("+", "-", "atan"),
     (">.", "<.", "=", ">", "<")
 )
@@ -320,6 +320,7 @@ verbs = [
     Verb(symbol="√", urank=0, ufunc=np.sqrt, brank1=None, brank2=None, bfunc=None),
     Verb(symbol="<", urank=None, ufunc=None, brank1=0, brank2=0, bfunc=np.less),
     Verb(symbol=">", urank=None, ufunc=None, brank1=0, brank2=0, bfunc=np.greater),
+    Verb(symbol="÷", urank=0, ufunc=np.reciprocal, brank1=0, brank2=0, bfunc=np.divide),
 ]
 symbol_to_verb = {v.symbol: v for v in verbs}
 
