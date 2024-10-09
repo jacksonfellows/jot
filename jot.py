@@ -28,7 +28,7 @@ RIGHT_BRACKET_TOKEN = "RIGHT_BRACKET_TOKEN"
 class ParseError(ValueError):
     pass
 
-verb_tokens = set(["+", "-", "*", "i.", "<.", ">.", "=", "$", ".", "|", "?", "sin", "cos", "tan", "asin", "acos", "atan", "√", "<", ">", "÷", "!"])
+verb_tokens = set(["+", "-", "*", "i.", "<.", ">.", "=", "$", ".", "|", "?", "sin", "cos", "tan", "asin", "acos", "atan", "√", "<", ">", "÷", "!", "#"])
 adverb_tokens = set(["/", "~", "\\"])
 # " is an adverb but is treated like a conjunction bc. of how the parser works.
 conjunction_tokens = set(["@", "\"", "@:"])
@@ -118,7 +118,9 @@ def source_verb(expr):
     if expr[0] == "apply_conjunction":
         if expr[1] == ConjunctionToken("\""):
             return source_verb(expr[2])
-        return "+"              # Fake reasonable precedence.
+        return "*"              # Fake precedence.
+    if expr[0] == "make_train":
+        return "*"              # Fake precedence.
 
 class Parser:
     def __init__(self, s):
@@ -165,11 +167,11 @@ class Parser:
             else:
                 i += 1
         # Verbs.
-        is_verb = lambda x: type(x) == VerbToken or (type(x) == tuple and x[0] in ("apply_adverb", "apply_conjunction"))
+        is_verb = lambda x: type(x) == VerbToken or (type(x) == tuple and x[0] in ("apply_adverb", "apply_conjunction", "make_train"))
         # First, handle unary verbs.
-        i = len(atoms)-1
+        i = len(atoms)-2
         while len(atoms) > 1 and i >= 0:
-            if is_verb(atoms[i]) and (i == 0 or is_verb(atoms[i-1])):
+            if is_verb(atoms[i]) and (i == 0 or is_verb(atoms[i-1])) and (not is_verb(atoms[i+1])):
                 atoms[i:i+2] = [("apply_verb", to_symbol(atoms[i]), atoms[i+1])]
             else:
                 i -= 1
@@ -177,14 +179,15 @@ class Parser:
         for verbs in binary_verb_prec_levels:
             i = len(atoms)-2
             while len(atoms) > 1 and i >= 1:
-                if is_verb(atoms[i]) and source_verb(atoms[i]) in verbs:
+                if is_verb(atoms[i]) and source_verb(atoms[i]) in verbs and (not is_verb(atoms[i-1])) and (not is_verb(atoms[i+1])):
                     atoms[i-1:i+2] = [("apply_verb", to_symbol(atoms[i]), atoms[i-1], atoms[i+1])]
                 i -= 1
 
         if array_literal:
             return atoms
         else:
-            if len(atoms) != 1: raise ParseError()
+            if len(atoms) != 1:
+                return ("make_train", *[to_symbol(a) for a in atoms])
             return atoms[0]
 
     def parse_atom(self):
@@ -324,7 +327,8 @@ verbs = [
     Verb(symbol="<", urank=None, ufunc=None, brank1=0, brank2=0, bfunc=np.less),
     Verb(symbol=">", urank=None, ufunc=None, brank1=0, brank2=0, bfunc=np.greater),
     Verb(symbol="÷", urank=0, ufunc=np.reciprocal, brank1=0, brank2=0, bfunc=np.divide),
-    Verb(symbol="!", urank=0, ufunc=scipy.special.factorial, brank1=0, brank2=0, bfunc=scipy.special.comb)
+    Verb(symbol="!", urank=0, ufunc=scipy.special.factorial, brank1=0, brank2=0, bfunc=scipy.special.comb),
+    Verb(symbol="#", urank=INF, ufunc=lambda x: np.array(x.shape[0]), brank1=None, brank2=None, bfunc=None),
 ]
 symbol_to_verb = {v.symbol: v for v in verbs}
 
@@ -460,6 +464,20 @@ modifiers = {
     "@:": eval_colon_at,
 }
 
+def make_train(args):
+    if len(args) == 3 and all(type(a) == Verb for a in args):
+        # Fork
+        f, g, h = args
+        return Verb(
+            symbol=None,
+            urank=INF,
+            ufunc=lambda x: eval_verb(g, eval_verb(f, x), eval_verb(h, x)),
+            brank1=INF,
+            brank2=INF,
+            bfunc=lambda x, y: eval_verb(g, eval_verb(f, x, y), eval_verb(h, x, y))
+        )
+    raise EvalError(f"Train with arguments {args} not supported.")
+
 def eval_expr(expr):
     if type(expr) == tuple:
         args = [eval_expr(x) for x in expr[1:]]
@@ -469,6 +487,8 @@ def eval_expr(expr):
             return eval_verb(*args)
         if expr[0] in ("apply_adverb", "apply_conjunction"):
             return modifiers[args[0]](*args[1:])
+        if expr[0] == "make_train":
+            return make_train(args)
     elif type(expr) == str and expr in symbol_to_verb:
         return symbol_to_verb[expr]
     else:
