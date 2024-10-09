@@ -2,7 +2,6 @@ import itertools
 from collections import namedtuple
 from dataclasses import dataclass
 from math import prod
-from typing import Any
 
 import numpy as np
 import scipy
@@ -13,17 +12,46 @@ INF = float("inf")
 SPEEDUP = True
 
 # --------------------------------------------------------------------------------
+# State (for parsing and evaluation).
+
+class JotState:
+    def __init__(self):
+        self.vars = {}
+
+    def assign(self, name, value):
+        if name in symbol_to_verb:
+            raise EvalError(f"Cannot assign to {name}")
+        self.vars[name] = value
+
+    def lookup(self, name):
+        if name in symbol_to_verb:
+            return symbol_to_verb[name]
+        return self.vars.get(name)
+
+    def lookup_type(self, name):
+        x = self.lookup(name)
+        if x is None:
+            return "undef"
+        if type(x) == Verb:
+            return "verb"
+        return "noun"
+
+# --------------------------------------------------------------------------------
 # Tokenizer.
 
 VerbToken = namedtuple("VerbToken", ["symbol"])
 AdverbToken = namedtuple("AdverbToken", ["symbol"])
 ConjunctionToken = namedtuple("ConjunctionToken", ["symbol"])
+NounToken = namedtuple("NounToken", ["symbol"])
+UndefToken = namedtuple("UndefToken", ["symbol"])
 
 END_TOKEN = "END_TOKEN"
 LEFT_PAREN_TOKEN = "LEFT_PAREN_TOKEN"
 RIGHT_PAREN_TOKEN = "RIGHT_PAREN_TOKEN"
 LEFT_BRACKET_TOKEN = "LEFT_BRACKET_TOKEN"
 RIGHT_BRACKET_TOKEN = "RIGHT_BRACKET_TOKEN"
+
+ASSIGN_TOKEN = "ASSIGN_TOKEN"
 
 class ParseError(ValueError):
     pass
@@ -47,9 +75,10 @@ token_chars = "".join(verb_tokens | adverb_tokens | conjunction_tokens | set("'"
 LiteralToken = namedtuple("LiteralToken", ["value"])
 
 class Tokenizer:
-    def __init__(self, s):
+    def __init__(self, s, state: JotState):
         self.s = s
         self.i = 0
+        self.state = state
 
     def curr(self):
         return self.s[self.i]
@@ -61,7 +90,10 @@ class Tokenizer:
         return self.s[self.i].isspace()
 
     def is_token_char(self):
-        return self.s[self.i] in token_chars
+        return self.i < len(self.s) and self.s[self.i] in token_chars
+
+    def is_alpha(self):
+        return self.i < len(self.s) and self.curr().isalpha()
 
     def consume(self):
         if self.i >= len(self.s):
@@ -76,6 +108,7 @@ class Tokenizer:
             ")": RIGHT_PAREN_TOKEN,
             "[": LEFT_BRACKET_TOKEN,
             "]": RIGHT_BRACKET_TOKEN,
+            "←": ASSIGN_TOKEN,
         }
 
         if self.curr() in char_to_token:
@@ -102,7 +135,12 @@ class Tokenizer:
                 return ConjunctionToken(name)
             if name == "'":
                 return TRANSPOSE_TOKEN
-        assert 0
+
+        while self.is_alpha():
+            self.i += 1
+        name = self.s[start_i:self.i]
+        type = self.state.lookup_type(name)
+        return {"undef": UndefToken, "verb": VerbToken, "noun": NounToken}[type](name)
 
 # --------------------------------------------------------------------------------
 # Parser.
@@ -123,14 +161,33 @@ def source_verb(expr):
         return "*"              # Fake precedence.
 
 class Parser:
-    def __init__(self, s):
-        self.next_token = Tokenizer(s).consume
+    def __init__(self, s, state: JotState):
+        self.next_token = Tokenizer(s, state).consume
+        self.token_stack = []
         self.current_token = self.next_token()
 
     def consume(self):
         x = self.current_token
-        self.current_token = self.next_token()
+        if len(self.token_stack) == 0:
+            self.current_token = self.next_token()
+        else:
+            self.current_token = self.token_stack.pop()
         return x
+
+    def peek(self):
+        x = self.next_token()
+        self.token_stack.append(x)
+        return x
+
+    def parse_line(self):
+        if self.peek() == ASSIGN_TOKEN:
+            # Assignment.
+            name = self.consume()
+            assert self.consume() == ASSIGN_TOKEN
+            val = self.parse_expr()
+            return ("assign", name, val)
+        else:
+            return self.parse_expr()
 
     def parse_expr(self, array_literal=False):
         atoms = []
@@ -186,9 +243,9 @@ class Parser:
         if array_literal:
             return atoms
         else:
-            if len(atoms) != 1:
-                return ("make_train", *[to_symbol(a) for a in atoms])
-            return atoms[0]
+            if len(atoms) == 1:
+                return atoms[0]
+            return ("make_train", *[to_symbol(a) for a in atoms])
 
     def parse_atom(self):
         if type(self.current_token) == LiteralToken:
@@ -197,7 +254,7 @@ class Parser:
             return self.parse_parens()
         if self.current_token == LEFT_BRACKET_TOKEN:
             return self.parse_array_literal()
-        if type(self.current_token) in (VerbToken, AdverbToken, ConjunctionToken):
+        if type(self.current_token) in (VerbToken, AdverbToken, ConjunctionToken, NounToken, UndefToken):
             return self.consume()
         if self.current_token == TRANSPOSE_TOKEN:
             return self.consume()
@@ -218,9 +275,15 @@ class Parser:
         self.consume()
         return ("array_literal", *arr)
 
-def parse_expr(s):
-    parser = Parser(s)
+def parse_expr(s, state: JotState):
+    parser = Parser(s, state)
     x = parser.parse_expr()
+    assert parser.current_token == END_TOKEN
+    return x
+
+def parse_line(s, state: JotState):
+    parser = Parser(s, state)
+    x = parser.parse_line()
     assert parser.current_token == END_TOKEN
     return x
 
@@ -478,9 +541,9 @@ def make_train(args):
         )
     raise EvalError(f"Train with arguments {args} not supported.")
 
-def eval_expr(expr):
+def eval_expr(expr, state: JotState):
     if type(expr) == tuple:
-        args = [eval_expr(x) for x in expr[1:]]
+        args = [eval_expr(x, state) for x in expr[1:]]
         if expr[0] == "array_literal":
             return np.array(args)
         if expr[0] == "apply_verb":
@@ -489,17 +552,25 @@ def eval_expr(expr):
             return modifiers[args[0]](*args[1:])
         if expr[0] == "make_train":
             return make_train(args)
-    elif type(expr) == str and expr in symbol_to_verb:
-        return symbol_to_verb[expr]
-    else:
-        return expr
+        if expr[0] == "assign":
+            state.assign(args[0].symbol, args[1])
+            return args[1]
+    if type(expr) == str and expr not in modifiers:
+        return state.lookup(expr)
+    if type(expr) == NounToken:
+        return state.lookup(expr.symbol)
+    return expr
+
+def parse_and_eval(string: str, state: JotState):
+    return eval_expr(parse_line(string, state), state)
 
 def repl():
+    state = JotState()
     while 1:
         try:
             inp = input("> ")
             try:
-                print(eval_expr(parse_expr(inp)))
+                print(parse_and_eval(inp, state))
             except Exception as e:
                 print("Error:", e)
         except EOFError:

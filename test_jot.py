@@ -1,7 +1,7 @@
 import numpy as np
 
 import jot
-from jot import eval_expr, parse_expr
+from jot import JotState, parse_and_eval
 
 test_cases = [
     ("2 + --2", 4),
@@ -87,6 +87,21 @@ equiv_cases = [
     ("(+ - (+/ ÷ #)) [1 2 3]", "[(-1) 0 1]"),
 ]
 
+test_sessions = [
+    [
+        ("a←i.10", None),
+        ("a", np.arange(10)),
+        ("mean←+/÷#", None),
+        ("mean a", 4.5),
+    ],
+    [
+        ("a←1 + 2*3", None),
+        ("a", 7),
+        ("b←10$a", None),
+        ("b-a", np.zeros(10)),
+    ]
+]
+
 def assert_same(x, y):
     assert x.shape == y.shape
     assert np.all(x == y)
@@ -96,18 +111,30 @@ def _test_basic():
         print(f"{s} => {a}")
         if type(a) in (int, float):
             a = np.array(a)
-        res = eval_expr(parse_expr(s))
+        res = parse_and_eval(s, JotState())
         assert_same(a, res)
 
 def _test_equiv():
     for a, b in equiv_cases:
         print(f"{a} <=> {b}")
-        x = eval_expr(parse_expr(a))
-        y = eval_expr(parse_expr(b))
+        x = parse_and_eval(a, JotState())
+        y = parse_and_eval(b, JotState())
         assert_same(x, y)
 
+def _test_sessions():
+    for session in test_sessions:
+        state = JotState()
+        for input,expected_out in session:
+            out = parse_and_eval(input, state)
+            if expected_out is not None:
+                if type(expected_out) in (int, float):
+                    expected_out = np.array(expected_out)
+                if type(expected_out) == str:
+                    expected_out = parse_and_eval(expected_out, JotState())
+                assert_same(out, expected_out)
+
 def test_all():
-    for test_func in [_test_basic, _test_equiv]:
+    for test_func in [_test_basic, _test_equiv, _test_sessions]:
         jot.SPEEDUP = True
         print(f"{test_func.__name__}, {jot.SPEEDUP=}")
         test_func()
