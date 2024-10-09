@@ -5,6 +5,7 @@ from math import prod
 from typing import Any
 
 import numpy as np
+import scipy
 from numpy.lib.stride_tricks import sliding_window_view
 
 INF = float("inf")
@@ -25,14 +26,14 @@ RIGHT_BRACKET_TOKEN = "RIGHT_BRACKET_TOKEN"
 class ParseError(ValueError):
     pass
 
-verb_tokens = set(["+", "-", "*", "i.", "<.", ">.", "=", "$", ".", "|", "?", "sin", "cos", "tan", "asin", "acos", "atan", "√", "<", ">", "÷"])
+verb_tokens = set(["+", "-", "*", "i.", "<.", ">.", "=", "$", ".", "|", "?", "sin", "cos", "tan", "asin", "acos", "atan", "√", "<", ">", "÷", "!"])
 adverb_tokens = set(["/", "~", "\\"])
 # " is an adverb but is treated like a conjunction bc. of how the parser works.
 conjunction_tokens = set(["@", "\"", "@:"])
 
 binary_verb_prec_levels = (
     ("$"),
-    ("*", ".", "÷"),
+    ("*", ".", "÷", "!"),
     ("+", "-", "atan"),
     (">.", "<.", "=", ">", "<")
 )
@@ -321,6 +322,7 @@ verbs = [
     Verb(symbol="<", urank=None, ufunc=None, brank1=0, brank2=0, bfunc=np.less),
     Verb(symbol=">", urank=None, ufunc=None, brank1=0, brank2=0, bfunc=np.greater),
     Verb(symbol="÷", urank=0, ufunc=np.reciprocal, brank1=0, brank2=0, bfunc=np.divide),
+    Verb(symbol="!", urank=0, ufunc=scipy.special.factorial, brank1=0, brank2=0, bfunc=scipy.special.comb)
 ]
 symbol_to_verb = {v.symbol: v for v in verbs}
 
