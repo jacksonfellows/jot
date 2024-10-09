@@ -136,6 +136,7 @@ class Tokenizer:
             if name == "'":
                 return TRANSPOSE_TOKEN
 
+        self.i = start_i        # Reset if failed to parse known token.
         while self.is_alpha():
             self.i += 1
         name = self.s[start_i:self.i]
