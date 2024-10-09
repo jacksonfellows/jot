@@ -306,7 +306,7 @@ def apply_as_rank_unary(x, rank, ufunc):
     if rank == INF:
         return ufunc(x)
     if len(x.shape) <= rank:
-        while len(x.shape) < rank: x = x.reshape((*x.shape, 1))
+        while len(x.shape) < rank: x = x.reshape((1, *x.shape))
         return ufunc(x)
     shape = x.shape[:len(x.shape) - int(rank)]
     i_res = [(i, ufunc(x[i])) for i in np.ndindex(shape)]
@@ -334,11 +334,17 @@ def apply_as_rank_binary(x, y, rank1, rank2, bfunc):
 
     # Convert arguments to common shape.
     if len(x.shape) > len(y.shape):
-        while len(y.shape) < len(x.shape): y = y.reshape((*y.shape, 1))
+        while len(y.shape) < len(x.shape): y = y.reshape((1, *y.shape))
         y = np.broadcast_to(y, x.shape)
     elif len(y.shape) > len(x.shape):
-        while len(x.shape) < len(y.shape): x = x.reshape((*x.shape, 1))
+        while len(x.shape) < len(y.shape): x = x.reshape((1, *x.shape))
         x = np.broadcast_to(x, y.shape)
+
+    if x.shape != y.shape:
+        if prod(x.shape) < prod(y.shape):
+            x = np.broadcast_to(x, y.shape)
+        else:
+            y = np.broadcast_to(y, x.shape)
 
     # Special-case numpy ufuncs:
     if SPEEDUP and rank1 == 0 and rank2 == 0 and type(bfunc) in (np.ufunc, np.vectorize):
