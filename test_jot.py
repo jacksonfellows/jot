@@ -108,7 +108,17 @@ test_sessions = [
         ("a←i.10", None),
         ("mean ← +/ ÷ #", None),
         ("3 mean\\ a", "[1 2 3 4 5 6 7 8]"),
-    ]
+    ],
+    [
+        ("mean ← +/ ÷ #", None),
+        # Need to change rank of - to subtract by rows.
+        ("demean ← + -\"[1 ∞] mean", None),
+        ("A ← [3 3]$[1 2 3]", None),
+        # Apply to columns of A:
+        ("demean A", np.zeros((3,3))),
+        # Apply to rows of A:
+        ("demean\"1 A", "[3 3]$[-1 0 1]"),
+    ],
 ]
 
 def assert_same(x, y):
