@@ -1,5 +1,6 @@
 import numpy as np
 
+import jot
 from jot import eval_expr, parse_expr
 
 test_cases = [
@@ -80,6 +81,7 @@ equiv_cases = [
     ("!5", "120"),
     ("10!1", "10"),
     ("10!2", "45"),
+    ("!/~i.3", "[[1 0 0] [1 1 0] [1 2 1]]")
 
 ]
 
@@ -87,7 +89,7 @@ def assert_same(x, y):
     assert x.shape == y.shape
     assert np.all(x == y)
 
-def test_basic():
+def _test_basic():
     for s, a in test_cases:
         print(f"{s} => {a}")
         if type(a) in (int, float):
@@ -95,9 +97,18 @@ def test_basic():
         res = eval_expr(parse_expr(s))
         assert_same(a, res)
 
-def test_equiv():
+def _test_equiv():
     for a, b in equiv_cases:
         print(f"{a} <=> {b}")
         x = eval_expr(parse_expr(a))
         y = eval_expr(parse_expr(b))
         assert_same(x, y)
+
+def test_all():
+    for test_func in [_test_basic, _test_equiv]:
+        jot.SPEEDUP = True
+        print(f"{test_func.__name__}, {jot.SPEEDUP=}")
+        test_func()
+        jot.SPEEDUP = False
+        print(f"{test_func.__name__}, {jot.SPEEDUP=}")
+        test_func()

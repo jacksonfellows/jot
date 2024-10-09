@@ -10,6 +10,8 @@ from numpy.lib.stride_tricks import sliding_window_view
 
 INF = float("inf")
 
+SPEEDUP = True
+
 # --------------------------------------------------------------------------------
 # Tokenizer.
 
@@ -224,7 +226,7 @@ def parse_expr(s):
 
 def apply_as_rank_unary(x, rank, ufunc):
     # Special-case numpy ufuncs:
-    if rank == 0 and type(ufunc) in (np.ufunc, np.vectorize):
+    if SPEEDUP and rank == 0 and type(ufunc) in (np.ufunc, np.vectorize):
         return ufunc(x)
 
     if rank == INF:
@@ -265,7 +267,7 @@ def apply_as_rank_binary(x, y, rank1, rank2, bfunc):
         x = np.broadcast_to(x, y.shape)
 
     # Special-case numpy ufuncs:
-    if rank1 == 0 and rank2 == 0 and type(bfunc) in (np.ufunc, np.vectorize):
+    if SPEEDUP and rank1 == 0 and rank2 == 0 and type(bfunc) in (np.ufunc, np.vectorize):
         return bfunc(x, y)
 
     # Apply verb. Got to be a cleaner way.
@@ -333,16 +335,38 @@ def eval_verb(verb, *args):
         return apply_as_rank_binary(args[0], args[1], verb.brank1, verb.brank2, verb.bfunc)
     raise EvalError(f"Too many nouns for verb {verb}.")
 
-def eval_slash(verb):
+def reduce_verb(verb, x):
+    if len(x.shape) == 0: return x
     func = verb.bfunc
-    assert type(func) == np.ufunc
+    if SPEEDUP:
+        if type(func) == np.ufunc:
+            return func.reduce(x, axis=0)
+    out = np.zeros(x.shape[1:])
+    for j in np.ndindex(x.shape[1:]):
+        res = x[0, *j]
+        for i in range(1,x.shape[0]):
+            res = func(res, x[i, *j])
+        out[j] = res
+    return out
+
+def outer_verb(verb, x, y):
+    func = verb.bfunc
+    if SPEEDUP:
+        if type(func) == np.ufunc:
+            return func.outer(x, y)
+    out = np.zeros(x.shape + y.shape)
+    for i,j in itertools.product(np.ndindex(x.shape), np.ndindex(y.shape)):
+        out[i,j] = func(x[i], x[j])
+    return out
+
+def eval_slash(verb):
     return Verb(
         symbol=None,
         urank=INF,
-        ufunc=lambda x: func.reduce(x, axis=0),
+        ufunc=lambda x: reduce_verb(verb, x),
         brank1=INF,
         brank2=INF,
-        bfunc=lambda x, y: func.outer(x, y)
+        bfunc=lambda x, y: outer_verb(verb, x, y),
     )
 
 def eval_tilde(verb):
