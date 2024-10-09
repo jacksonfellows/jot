@@ -103,6 +103,11 @@ test_sessions = [
     [
         ("a←[0 1]", None),
         ("a*/a", "[[0 0] [0 1]]"),
+    ],
+    [
+        ("a←i.10", None),
+        ("mean ← +/ ÷ #", None),
+        ("3 mean\\ a", "[1 2 3 4 5 6 7 8]"),
     ]
 ]
 
@@ -129,6 +134,7 @@ def _test_sessions():
     for session in test_sessions:
         state = JotState()
         for input,expected_out in session:
+            print(f"{input} => {expected_out}")
             out = parse_and_eval(input, state)
             if expected_out is not None:
                 if type(expected_out) in (int, float):

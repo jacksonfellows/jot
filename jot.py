@@ -2,6 +2,7 @@ import itertools
 from collections import namedtuple
 from dataclasses import dataclass
 from math import prod
+from typing import Any
 
 import numpy as np
 import scipy
@@ -32,9 +33,13 @@ class JotState:
         x = self.lookup(name)
         if x is None:
             return "undef"
-        if type(x) == Verb:
+        if type(x) is Verb:
             return "verb"
         return "noun"
+
+    def binary_verb_prec_levels(self):
+        user_verbs = tuple(v.symbol for v in self.vars.values() if type(v) == Verb)
+        return tuple(level + user_verbs if USER_FAKE_PREC in level else level for level in binary_verb_prec_levels)
 
 # --------------------------------------------------------------------------------
 # Tokenizer.
@@ -67,6 +72,7 @@ binary_verb_prec_levels = (
     ("+", "-", "atan"),
     (">.", "<.", "=", ">", "<")
 )
+USER_FAKE_PREC = "*"
 
 TRANSPOSE_TOKEN = "TRANSPOSE_TOKEN"
 
@@ -157,13 +163,14 @@ def source_verb(expr):
     if expr[0] == "apply_conjunction":
         if expr[1] == ConjunctionToken("\""):
             return source_verb(expr[2])
-        return "*"              # Fake precedence.
+        return USER_FAKE_PREC   # Fake precedence.
     if expr[0] == "make_train":
-        return "*"              # Fake precedence.
+        return USER_FAKE_PREC   # Fake precedence.
 
 class Parser:
     def __init__(self, s, state: JotState):
-        self.next_token = Tokenizer(s, state).consume
+        self.state = state
+        self.next_token = Tokenizer(s, self.state).consume
         self.token_stack = []
         self.current_token = self.next_token()
 
@@ -234,7 +241,7 @@ class Parser:
             else:
                 i -= 1
         # Next, handle binary verbs (respecting precedence).
-        for verbs in binary_verb_prec_levels:
+        for verbs in self.state.binary_verb_prec_levels():
             i = len(atoms)-2
             while len(atoms) > 1 and i >= 1:
                 if is_verb(atoms[i]) and source_verb(atoms[i]) in verbs and (not is_verb(atoms[i-1])) and (not is_verb(atoms[i+1])):
@@ -351,7 +358,14 @@ class EvalError(ValueError):
 
 TODO_ERROR = EvalError("Not yet implemented!")
 
-Verb = namedtuple("Verb", ["symbol", "urank", "ufunc", "brank1", "brank2", "bfunc"])
+@dataclass
+class Verb:
+    symbol: str
+    urank: Any
+    ufunc: Any
+    brank1: Any
+    brank2: Any
+    bfunc: Any
 
 def integers_func(shape):
     # TODO handle negative shapes like in J?
@@ -554,8 +568,12 @@ def eval_expr(expr, state: JotState):
         if expr[0] == "make_train":
             return make_train(args)
         if expr[0] == "assign":
-            state.assign(args[0].symbol, args[1])
-            return args[1]
+            name = args[0].symbol
+            val = args[1]
+            if type(val) is Verb:
+                val.symbol = name
+            state.assign(name, val)
+            return val
     if type(expr) == str and expr not in modifiers:
         return state.lookup(expr)
     if type(expr) == NounToken:
