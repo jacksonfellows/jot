@@ -16,8 +16,11 @@ SPEEDUP = True
 # State (for parsing and evaluation).
 
 class JotState:
-    def __init__(self):
-        self.vars = {}
+    def __init__(self, vars=None):
+        if vars is None:
+            self.vars = {}
+        else:
+            self.vars = vars
 
     def assign(self, name, value):
         if name in symbol_to_verb:
@@ -41,6 +44,12 @@ class JotState:
         user_verbs = tuple(v.symbol for v in self.vars.values() if type(v) == Verb)
         return tuple(level + user_verbs if USER_FAKE_PREC in level else level for level in binary_verb_prec_levels)
 
+    def bind(self, names, vals):
+        new_state = JotState(self.vars.copy())
+        for name,val in zip(names, vals):
+            new_state.assign(name, val)
+        return new_state
+
 # --------------------------------------------------------------------------------
 # Tokenizer.
 
@@ -55,7 +64,9 @@ LEFT_PAREN_TOKEN = "LEFT_PAREN_TOKEN"
 RIGHT_PAREN_TOKEN = "RIGHT_PAREN_TOKEN"
 LEFT_BRACKET_TOKEN = "LEFT_BRACKET_TOKEN"
 RIGHT_BRACKET_TOKEN = "RIGHT_BRACKET_TOKEN"
-
+COMMA_TOKEN = "COMMA_TOKEN"
+LAMBDA_TOKEN = "LAMBDA_TOKEN"
+COLON_TOKEN = "COLON_TOKEN"
 ASSIGN_TOKEN = "ASSIGN_TOKEN"
 
 class ParseError(ValueError):
@@ -115,6 +126,9 @@ class Tokenizer:
             "[": LEFT_BRACKET_TOKEN,
             "]": RIGHT_BRACKET_TOKEN,
             "←": ASSIGN_TOKEN,
+            ",": COMMA_TOKEN,
+            "λ": LAMBDA_TOKEN,
+            ":": COLON_TOKEN,
         }
 
         if self.curr() in char_to_token:
@@ -163,9 +177,8 @@ def source_verb(expr):
     if expr[0] == "apply_conjunction":
         if expr[1] == ConjunctionToken("\""):
             return source_verb(expr[2])
-        return USER_FAKE_PREC   # Fake precedence.
-    if expr[0] == "make_train":
-        return USER_FAKE_PREC   # Fake precedence.
+    return USER_FAKE_PREC   # Fake precedence.
+
 
 class Parser:
     def __init__(self, s, state: JotState):
@@ -232,7 +245,7 @@ class Parser:
             else:
                 i += 1
         # Verbs.
-        is_verb = lambda x: type(x) == VerbToken or (type(x) == tuple and x[0] in ("apply_adverb", "apply_conjunction", "make_train"))
+        is_verb = lambda x: type(x) == VerbToken or (type(x) == tuple and x[0] in ("apply_adverb", "apply_conjunction", "make_train", "lambda"))
         # First, handle unary verbs.
         i = len(atoms)-2
         while len(atoms) > 1 and i >= 0:
@@ -266,6 +279,25 @@ class Parser:
             return self.consume()
         if self.current_token == TRANSPOSE_TOKEN:
             return self.consume()
+        if self.current_token == LAMBDA_TOKEN:
+            return self.parse_lambda()
+
+    def parse_lambda(self):
+        assert self.consume() == LAMBDA_TOKEN
+        vars = []
+        while 1:
+            var = self.consume()
+            vars.append(var.symbol)
+            if self.current_token == COLON_TOKEN:
+                self.consume()
+                break
+            if self.current_token == COMMA_TOKEN:
+                self.consume()
+                pass
+            else:
+                raise ParseError()
+        body = self.parse_expr()
+        return ("lambda", vars, body)
 
     def parse_parens(self):
         assert self.current_token == LEFT_PAREN_TOKEN
@@ -562,8 +594,39 @@ def make_train(args):
         )
     raise EvalError(f"Train with arguments {args} not supported.")
 
+def make_lambda(args, body, current_state):
+    if len(args) == 1:
+        return Verb(
+            symbol=None,
+            urank=INF,
+            ufunc=lambda x: eval_expr(body, current_state.bind(args, [x])),
+            brank1=None,
+            brank2=None,
+            bfunc=None,
+        )
+    if len(args) == 2:
+        return Verb(
+            symbol=None,
+            urank=None,
+            ufunc=None,
+            brank1=INF,
+            brank2=INF,
+            bfunc=lambda x, y: eval_expr(body, current_state.bind(args, [x, y])),
+        )
+    raise EvalError("λ has too many arguments.")
+
 def eval_expr(expr, state: JotState):
     if type(expr) == tuple:
+        # Don't eval args for these constructs.
+        if expr[0] == "lambda":
+            return make_lambda(expr[1], expr[2], state)
+        if expr[0] == "assign":
+            name = expr[1].symbol
+            val = eval_expr(expr[2], state)
+            if type(val) is Verb:
+                val.symbol = name
+            state.assign(name, val)
+            return val
         args = [eval_expr(x, state) for x in expr[1:]]
         if expr[0] == "array_literal":
             return np.array(args)
@@ -573,16 +636,9 @@ def eval_expr(expr, state: JotState):
             return modifiers[args[0]](*args[1:])
         if expr[0] == "make_train":
             return make_train(args)
-        if expr[0] == "assign":
-            name = args[0].symbol
-            val = args[1]
-            if type(val) is Verb:
-                val.symbol = name
-            state.assign(name, val)
-            return val
     if type(expr) == str and expr not in modifiers:
         return state.lookup(expr)
-    if type(expr) == NounToken:
+    if type(expr) in (NounToken, UndefToken): # Messed up.
         return state.lookup(expr.symbol)
     return expr
 
